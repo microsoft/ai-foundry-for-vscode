@@ -3,7 +3,7 @@
     "title": "YAML Schema Validation for Azure Agent Configuration",
     "description": "JSON Schema for validating the agent YAML configuration",
     "type": "object",
-    "required": ["version", "name", "model", "instructions", "tools"],
+    "required": ["version", "name", "model", "instructions"],
     "additionalProperties": false,
     "properties": {
       "version": {
@@ -23,8 +23,7 @@
       "metadata": {
         "type": "object",
         "description": "Metadata about the agent",
-        "required": ["author"],
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "author": { 
             "type": "string",
@@ -115,9 +114,9 @@
                   "const": "code_interpreter",
                   "description": "Tool type must be 'code_interpreter'"
                 },
-                "name": { 
-                  "type": "string",
-                  "description": "Name of the code interpreter tool"
+                "id": { 
+                  "type": ["string", "null"],
+                  "description": "Identifier for the code interpreter tool"
                 },
                 "options": {
                   "type": "object",
@@ -135,7 +134,7 @@
                   "additionalProperties": false
                 }
               },
-              "required": ["type", "name", "options"],
+              "required": ["type"],
               "additionalProperties": false
             },
             {
@@ -172,7 +171,7 @@
                         }
                       },
                       "required": ["type"],
-                      "additionalProperties": false
+                      "additionalProperties": true
                     }
                   },
                   "required": ["specification", "auth"],
@@ -191,7 +190,7 @@
                   "description": "Tool type must be 'file_search'"
                 },
                 "id": { 
-                  "type": "string",
+                  "type": ["string", "null"],
                   "description": "Tool identifier for File Search"
                 },
                 "options": {
@@ -210,7 +209,7 @@
                   "additionalProperties": false
                 }
               },
-              "required": ["type", "id", "options"],
+              "required": ["type", "options"],
               "additionalProperties": false
             }
           ]

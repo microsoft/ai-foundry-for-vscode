@@ -1,0 +1,221 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "YAML Schema Validation for Azure Agent Configuration",
+    "description": "JSON Schema for validating the agent YAML configuration",
+    "type": "object",
+    "required": ["version", "name", "model", "instructions", "tools"],
+    "additionalProperties": false,
+    "properties": {
+      "version": {
+        "type": "string",
+        "description": "YAML schema version",
+        "const": "1.0.0"
+      },
+      "name": {
+        "type": "string",
+        "description": "Agent name",
+        "maxLength": 256
+      },
+      "description": {
+        "type": "string",
+        "description": "Agent description"
+      },
+      "metadata": {
+        "type": "object",
+        "description": "Metadata about the agent",
+        "required": ["author"],
+        "additionalProperties": false,
+        "properties": {
+          "author": { 
+            "type": "string",
+            "description": "Author name"
+          },
+          "tag": { 
+            "type": "string",
+            "description": "Agent tag"
+          }
+        }
+      },
+      "id": {
+        "type": ["string", "null"],
+        "description": "Agent id is a unique identifier for the agent. Use this field to switch to a different agent. This filed will be auto generated after deploy."
+      },
+      "model": {
+        "type": "object",
+        "description": "Model configuration for the agent",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { 
+            "type": "string",
+            "description": "Model deploy name"
+          },
+          "options": {
+            "type": "object",
+            "description": "Options for the model",
+            "properties": {
+              "temperature": { 
+                "type": ["number", "null"],
+                "description": "Model temperature setting"
+              },
+              "top_p": { 
+                "type": ["number", "null"],
+                "description": "Model top probability setting"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "instructions": {
+        "type": ["string", "null"],
+        "description": "Give your agent clear directions on what to do and how to do it. Include specific tasks, their order, and any special instructions like tone or engagement style."
+      },
+      "tools": {
+        "type": "array",
+        "description": "List of tools utilized by the agent",
+        "items": {
+          "oneOf": [
+            {
+              "type": "object",
+              "description": "Grounding with Bing Search connection configuration",
+              "required": ["type", "options"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { 
+                  "const": "bing_grounding",
+                  "description": "Tool type must be 'bing_grounding'"
+                },
+                "id": { 
+                  "type": ["string", "null"],
+                  "description": "Identifier for Bing Grounding"
+                },
+                "options": {
+                  "type": "object",
+                  "description": "Options for bing grounding tool",
+                  "required": ["tool_connections"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "tool_connections": {
+                      "type": "array",
+                      "description": "List of tool connection strings",
+                      "items": { "type": "string" },
+                      "minItems": 1,
+                      "maxItems": 1
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "description": "Code Interpreter tool configuration. Code interpreter is a tool that can read and interpret information from datasets, generate code, and create graphs and charts.",
+              "properties": {
+                "type": { 
+                  "const": "code_interpreter",
+                  "description": "Tool type must be 'code_interpreter'"
+                },
+                "name": { 
+                  "type": "string",
+                  "description": "Name of the code interpreter tool"
+                },
+                "options": {
+                  "type": "object",
+                  "description": "Options for code_interpreter tool",
+                  "properties": {
+                    "file_ids": {
+                      "type": "array",
+                      "description": "List of file id used by the code interpreter",
+                      "items": { "type": "string" },
+                      "minItems": 1,
+                      "maxItems": 20
+                    }
+                  },
+                  "required": ["file_ids"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["type", "name", "options"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "OpenAPI tool configuration for weather data",
+              "properties": {
+                "type": { 
+                  "const": "openapi",
+                  "description": "Tool type must be 'openapi'"
+                },
+                "id": { 
+                  "type": "string",
+                  "description": "Tool identifier for OpenAPI tool"
+                },
+                "description": { 
+                  "type": "string",
+                  "description": "Description for OpenAPI tool"
+                },
+                "options": {
+                  "type": "object",
+                  "description": "Options for openapi tool",
+                  "properties": {
+                    "specification": { 
+                      "type": "string",
+                      "description": "OpenAPI specification provided as a JSON string"
+                    },
+                    "auth": {
+                      "type": "object",
+                      "description": "Authentication settings for OpenAPI tool",
+                      "properties": {
+                        "type": { 
+                          "type": "string",
+                          "description": "Authentication type for OpenAPI tool"
+                        }
+                      },
+                      "required": ["type"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["specification", "auth"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["type", "id", "description", "options"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "File Search tool configuration. Add your own files to augment the agent with specialized knowledge. Files will be added to a vector store that the search index can reference for quick information retrieval. Encrypted or sensitivity-labeled files are not supported.",
+              "properties": {
+                "type": { 
+                  "const": "file_search",
+                  "description": "Tool type must be 'file_search'"
+                },
+                "id": { 
+                  "type": "string",
+                  "description": "Tool identifier for File Search"
+                },
+                "options": {
+                  "type": "object",
+                  "description": "Options for file_search tool",
+                  "properties": {
+                    "vector_store_ids": {
+                      "type": "array",
+                      "description": "List of vector store identifiers",
+                      "items": { "type": "string" },
+                      "minItems": 1,
+                      "maxItems": 1
+                    }
+                  },
+                  "required": ["vector_store_ids"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["type", "id", "options"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    }
+  }
+  

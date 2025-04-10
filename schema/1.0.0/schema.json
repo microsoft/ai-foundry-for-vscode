@@ -55,11 +55,15 @@
             "properties": {
               "temperature": { 
                 "type": ["number", "null"],
-                "description": "Model temperature setting"
+                "description": "Model temperature setting",
+                "maximum": 1,
+                "minimum": 0
               },
               "top_p": { 
                 "type": ["number", "null"],
-                "description": "Model top probability setting"
+                "description": "Model top probability setting",
+                "maximum": 1,
+                "minimum": 0
               }
             },
             "additionalProperties": false

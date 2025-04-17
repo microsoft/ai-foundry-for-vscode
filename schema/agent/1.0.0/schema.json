@@ -23,7 +23,6 @@
       "metadata": {
         "type": "object",
         "description": "Metadata about the agent",
-        "additionalProperties": true,
         "properties": {
           "author": { 
             "type": "string",
@@ -182,7 +181,7 @@
                   "additionalProperties": false
                 }
               },
-              "required": ["type", "id", "description", "options"],
+              "required": ["type", "id", "options"],
               "additionalProperties": false
             },
             {

@@ -129,7 +129,7 @@
                       "type": "array",
                       "description": "List of file id used by the code interpreter",
                       "items": { "type": "string" },
-                      "minItems": 1,
+                      "minItems": 0,
                       "maxItems": 20
                     }
                   },

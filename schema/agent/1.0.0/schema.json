@@ -17,7 +17,7 @@
         "maxLength": 256
       },
       "description": {
-        "type": "string",
+        "type": ["string", "null"],
         "description": "The description of the agent."
       },
       "metadata": {
@@ -153,7 +153,7 @@
                   "description": "Tool identifier for OpenAPI tool"
                 },
                 "description": { 
-                  "type": "string",
+                  "type": ["string", "null"],
                   "description": "A description of what the function does, used by the model to choose when and how to call the function."
                 },
                 "options": {

@@ -1,6 +1,6 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "YAML Schema Validation for Azure Agent Configuration",
+    "title": "YAML Schema for Azure Agent",
     "description": "JSON Schema for validating the agent YAML configuration",
     "type": "object",
     "required": ["version", "name", "model", "instructions"],
@@ -40,6 +40,7 @@
       },
       "model": {
         "type": "object",
+        "title": "Model info of the agent",
         "description": "The ID of the model to use for the agent. ",
         "required": ["id"],
         "additionalProperties": false,
@@ -75,11 +76,13 @@
       },
       "tools": {
         "type": "array",
+        "title": "Tools for agent",
         "description": "A set of resources that are used by the agent's tools. The resources are specific to the type of tool. For example, the `code_interpreter` tool requires a list of file IDs, while the `file_search` tool requires a list of vector store IDs.",
         "items": {
           "oneOf": [
             {
               "type": "object",
+              "title": "Bing grounding tool",
               "description": "The input definition information for a bing grounding search tool as used to configure an agent.",
               "required": ["type", "options"],
               "additionalProperties": false,
@@ -111,6 +114,7 @@
             },
             {
               "type": "object",
+              "title": "Code interpreter tool",
               "description": "Code Interpreter tool configuration. Code interpreter is a tool that can read and interpret information from datasets, generate code, and create graphs and charts.",
               "properties": {
                 "type": { 
@@ -142,6 +146,7 @@
             },
             {
               "type": "object",
+              "title": "OpenAI tool",
               "description": "The input definition information for an OpenAPI tool as used to configure an agent",
               "properties": {
                 "type": { 
@@ -186,6 +191,7 @@
             },
             {
               "type": "object",
+              "title": "File search tool",
               "description": "File Search tool configuration. Add your own files to augment the agent with specialized knowledge. Files will be added to a vector store that the search index can reference for quick information retrieval. Encrypted or sensitivity-labeled files are not supported.",
               "properties": {
                 "type": { 

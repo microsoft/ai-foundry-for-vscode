@@ -408,6 +408,48 @@
               "options"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "title": "Agent tool: MCP",
+            "description": "MCP tool configuration. Use MCP tools to interact with external services.",
+            "properties": {
+              "type": {
+                "const": "mcp",
+                "description": "The object type, which is always 'mcp'."
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Tool identifier for MCP"
+              },
+              "options": {
+                "type": "object",
+                "description": "Options for mcp tool",
+                "properties": {
+                  "server_url": {
+                    "type": "string",
+                    "description": "The URL of the MCP server"
+                  },
+                  "server_label": {
+                    "type": "string",
+                    "description": "The label for the MCP server"
+                  }
+                },
+                "required": [
+                  "server_url",
+                  "server_label"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type",
+              "options"
+            ],
+            "additionalProperties": false
           }
         ]
       }

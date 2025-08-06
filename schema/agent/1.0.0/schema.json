@@ -420,8 +420,7 @@
               },
               "id": {
                 "type": [
-                  "string",
-                  "null"
+                  "string"
                 ],
                 "description": "Tool identifier for MCP"
               },

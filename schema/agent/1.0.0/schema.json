@@ -418,12 +418,6 @@
                 "const": "mcp",
                 "description": "The object type, which is always 'mcp'."
               },
-              "id": {
-                "type": [
-                  "string"
-                ],
-                "description": "Tool identifier for MCP"
-              },
               "options": {
                 "type": "object",
                 "description": "Options for mcp tool",

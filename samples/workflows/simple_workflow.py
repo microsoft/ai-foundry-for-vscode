@@ -94,19 +94,30 @@ async def main():
         guess_number_executor = GuessAgentExecutor(
             ChatClientAgent(
                 chat_client=FoundryChatClient(client=client, agent_id=guess_agent.id),
-                instructions=(
-                    "You are a number guessing agent. Your task is to guess a number between 1 and 100 using binary search strategy. "
-                    "Binary search strategy: "
-                    "1. Initial range: lower_bound=1, upper_bound=100 "
-                    "2. Always guess the midpoint of the current range: (lower_bound + upper_bound) // 2 "
-                    "3. Adjust the range based on feedback: "
-                    "   - If guess is 'too low' or 'below target', set lower_bound = current_guess + 1 "
-                    "   - If guess is 'too high' or 'above target', set upper_bound = current_guess - 1 "
-                    "   - If guess is 'correct' or 'matched', you've found the answer! "
-                    "4. Repeat until you find the correct answer "
-                    "When you receive 'start' or any initial message, make your first guess as 50 (midpoint of 1-100). "
-                    "Always respond with just the integer number you're guessing."
-                ),
+                instructions="""You are a number guessing agent playing a guessing game. I need to find a number between 1 and 100.
+
+                IMPORTANT RULES:
+                1. NEVER repeat the same guess twice
+                2. Use binary search strategy to be efficient
+                3. Always respond with ONLY the number, nothing else
+                4. Keep track of what you've learned from previous guesses
+
+                BINARY SEARCH STRATEGY:
+                - Start with middle of current range
+                - If 'too low': the number is higher, so guess higher
+                - If 'too high': the number is lower, so guess lower
+                - Always eliminate half the remaining possibilities
+
+                EXAMPLE SEQUENCE (target is 30):
+                Range 1-100: guess 50 → 'too high' → range becomes 1-49
+                Range 1-49: guess 25 → 'too low' → range becomes 26-49
+                Range 26-49: guess 37 → 'too high' → range becomes 26-36
+                Range 26-36: guess 31 → 'too high' → range becomes 26-30
+                Range 26-30: guess 28 → 'too low' → range becomes 29-30
+                Range 29-30: guess 30 → 'correct'
+
+                CRITICAL: If you just guessed 25 and got 'too high', your next guess must be LOWER than 25!
+                Think step by step about your range and pick the middle of the valid range.""",
             ),
             id="guesser",
         )
@@ -114,14 +125,22 @@ async def main():
         judge_number_executor = JudgeAgentExecutor(
             ChatClientAgent(
                 chat_client=FoundryChatClient(client=client, agent_id=judge_agent.id),
-                instructions=(
-                    "You are a number judging agent. Your target number is 30. "
-                    "When you receive a guessed number, compare it to your target (30) and respond with exactly: "
-                    "- 'correct' if the guess equals 30 "
-                    "- 'too low' if the guess is less than 30 "
-                    "- 'too high' if the guess is greater than 30 "
-                    "Always respond with only these exact phrases, nothing more."
-                ),
+                instructions="""You are a number judging agent. The secret number you're thinking of is 30.
+                Your job is to compare each guess to 30 and give feedback.
+
+                RESPONSE RULES - respond with EXACTLY these phrases:
+                • If the guess is less than 30: say 'too low'
+                • If the guess is greater than 30: say 'too high'
+                • If the guess equals 30: say 'correct'
+
+                EXAMPLES:
+                Guess 15 → '15 < 30' → respond 'too low'
+                Guess 25 → '25 < 30' → respond 'too low'
+                Guess 35 → '35 > 30' → respond 'too high'
+                Guess 45 → '45 > 30' → respond 'too high'
+                Guess 30 → '30 = 30' → respond 'correct'
+
+                IMPORTANT: Only respond with the three exact phrases above. Nothing else.""",
             ),
             id="judge",
         )

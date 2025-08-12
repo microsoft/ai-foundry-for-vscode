@@ -21,37 +21,47 @@ from agent_framework_workflow._workflow_context import WorkflowContext
 from azure.ai.projects.aio import AIProjectClient
 from azure.identity.aio import AzureCliCredential
 
-"""
-The following sample demonstrates a basic workflow with two executors
-where one executor guesses a number and the other executor judges the
-guess iteratively. This version uses AgentExecutor with specific 
-instructions to implement the logic through natural language rather 
-than hardcoded algorithms.
-"""
+
+class StudentAgentExecutor(AgentExecutor):
+    @handler(output_types=[AgentExecutorResponse])
+    async def handle_teacher_question(
+        self, response: AgentExecutorResponse, ctx: WorkflowContext
+    ) -> None:
+        messages = response.agent_run_response.messages
+        request = AgentExecutorRequest(messages=messages, should_respond=True)
+        await self.run(request, ctx)
 
 
-class GuessAgentExecutor(AgentExecutor):
-    """Custom AgentExecutor for the guessing agent that can handle both requests and responses."""
+class TeacherAgentExecutor(AgentExecutor):
+    def __init__(self, agent, id="teacher"):
+        super().__init__(agent, id=id)
+        self.turn_count = 0
 
     @handler(output_types=[AgentExecutorResponse])
     async def handle_start_message(self, message: str, ctx: WorkflowContext) -> None:
-        """Handle the initial start message and convert it to a request for the guesser."""
-
         chat_message = ChatMessage(ChatRole.USER, text=message)
         request = AgentExecutorRequest(messages=[chat_message], should_respond=True)
         await self.run(request, ctx)
 
     @handler(output_types=[AgentExecutorResponse])
-    async def handle_judge_response(
+    async def handle_student_answer(
         self, response: AgentExecutorResponse, ctx: WorkflowContext
     ) -> None:
-        """Handle response from the judge and convert it to a request for the guesser."""
+        self.turn_count += 1
 
-        messages = response.agent_run_response.messages
-        if messages and messages[-1].text.lower().strip() == "correct":
+        if self.turn_count >= 5:
             await ctx.add_event(
                 WorkflowCompletedEvent(
-                    data="Number guessing game completed successfully!"
+                    data="Student-teacher conversation completed after 5 turns!"
+                )
+            )
+            return
+
+        messages = response.agent_run_response.messages
+        if messages and "[COMPLETE]" in messages[-1].text.upper():
+            await ctx.add_event(
+                WorkflowCompletedEvent(
+                    data="Student-teacher conversation completed by teacher!"
                 )
             )
             return
@@ -60,115 +70,69 @@ class GuessAgentExecutor(AgentExecutor):
         await self.run(request, ctx)
 
 
-class JudgeAgentExecutor(AgentExecutor):
-    """Custom AgentExecutor for the judging agent that can handle both requests and responses."""
-
-    @handler(output_types=[AgentExecutorResponse])
-    async def handle_guess_response(
-        self, response: AgentExecutorResponse, ctx: WorkflowContext
-    ) -> None:
-        """Handle response from the guesser and convert it to a request for the judge."""
-
-        messages = response.agent_run_response.messages
-        request = AgentExecutorRequest(messages=messages, should_respond=True)
-        await self.run(request, ctx)
-
-
 async def main():
-    """Main function to run the workflow."""
-
     credential = AzureCliCredential()
     client = AIProjectClient(
         endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"], credential=credential
     )
-    guess_agent = await client.agents.create_agent(
-        model=os.environ["FOUNDRY_MODEL_DEPLOYMENT_NAME"], name="GuessAgent"
+    student_agent = await client.agents.create_agent(
+        model=os.environ["FOUNDRY_MODEL_DEPLOYMENT_NAME"], name="StudentAgent"
     )
-
-    judge_agent = await client.agents.create_agent(
-        model=os.environ["FOUNDRY_MODEL_DEPLOYMENT_NAME"], name="JudgeAgent"
+    teacher_agent = await client.agents.create_agent(
+        model=os.environ["FOUNDRY_MODEL_DEPLOYMENT_NAME"], name="TeacherAgent"
     )
 
     try:
-        # Step 1: Create agent-based executors with specific instructions
-        guess_number_executor = GuessAgentExecutor(
+        student_executor = StudentAgentExecutor(
             ChatClientAgent(
-                chat_client=FoundryChatClient(client=client, agent_id=guess_agent.id),
-                instructions="""You are a number guessing agent playing a guessing game. I need to find a number between 1 and 100.
+                chat_client=FoundryChatClient(client=client, agent_id=student_agent.id),
+                instructions="""You are Jamie, a student. Your role is to answer the teacher's questions briefly and clearly.
 
                 IMPORTANT RULES:
-                1. NEVER repeat the same guess twice
-                2. Use binary search strategy to be efficient
-                3. Always respond with ONLY the number, nothing else
-                4. Keep track of what you've learned from previous guesses
-
-                BINARY SEARCH STRATEGY:
-                - Start with middle of current range
-                - If 'too low': the number is higher, so guess higher
-                - If 'too high': the number is lower, so guess lower
-                - Always eliminate half the remaining possibilities
-
-                EXAMPLE SEQUENCE (target is 30):
-                Range 1-100: guess 50 → 'too high' → range becomes 1-49
-                Range 1-49: guess 25 → 'too low' → range becomes 26-49
-                Range 26-49: guess 37 → 'too high' → range becomes 26-36
-                Range 26-36: guess 31 → 'too high' → range becomes 26-30
-                Range 26-30: guess 28 → 'too low' → range becomes 29-30
-                Range 29-30: guess 30 → 'correct'
-
-                CRITICAL: If you just guessed 25 and got 'too high', your next guess must be LOWER than 25!
-                Think step by step about your range and pick the middle of the valid range.""",
+                1. Answer questions directly and concisely
+                2. Keep responses short (1-2 sentences maximum)
+                3. Do NOT ask questions back""",
             ),
-            id="guesser",
+            id="student",
         )
 
-        judge_number_executor = JudgeAgentExecutor(
+        teacher_executor = TeacherAgentExecutor(
             ChatClientAgent(
-                chat_client=FoundryChatClient(client=client, agent_id=judge_agent.id),
-                instructions="""You are a number judging agent. The secret number you're thinking of is 30.
-                Your job is to compare each guess to 30 and give feedback.
+                chat_client=FoundryChatClient(client=client, agent_id=teacher_agent.id),
+                instructions="""You are Dr. Smith, a teacher. Your role is to ask the student different, simple questions to test their knowledge.
 
-                RESPONSE RULES - respond with EXACTLY these phrases:
-                • If the guess is less than 30: say 'too low'
-                • If the guess is greater than 30: say 'too high'
-                • If the guess equals 30: say 'correct'
-
-                EXAMPLES:
-                Guess 15 → '15 < 30' → respond 'too low'
-                Guess 25 → '25 < 30' → respond 'too low'
-                Guess 35 → '35 > 30' → respond 'too high'
-                Guess 45 → '45 > 30' → respond 'too high'
-                Guess 30 → '30 = 30' → respond 'correct'
-
-                IMPORTANT: Only respond with the three exact phrases above. Nothing else.""",
+                IMPORTANT RULES:
+                1. Ask ONE simple question at a time
+                2. NEVER repeat the same question twice
+                3. Ask DIFFERENT topics each time (science, math, history, geography, etc.)
+                4. Keep questions short and clear
+                5. Do NOT provide explanations - only ask questions""",
             ),
-            id="judge",
+            id="teacher",
         )
 
-        # Step 2: Build the workflow with the defined edges.
         workflow = (
             WorkflowBuilder()
-            .add_edge(guess_number_executor, judge_number_executor)
-            .add_edge(judge_number_executor, guess_number_executor)
-            .set_start_executor(guess_number_executor)
+            .add_edge(teacher_executor, student_executor)
+            .add_edge(student_executor, teacher_executor)
+            .set_start_executor(teacher_executor)
             .build()
         )
 
-        # Step 3: Run the workflow and let agents decide when to complete.
-        async for event in workflow.run_streaming("start"):
+        async for event in workflow.run_streaming("Start the quiz session."):
             if isinstance(event, AgentRunEvent):
-                print(f"{event.executor_id}: {event.data}")
+                agent_name = event.executor_id
+                print(f"\n{agent_name}: {event.data}")
             elif isinstance(event, WorkflowCompletedEvent):
-                print(f"🎉 {event.data}")
+                print(f"\n🎉 {event.data}")
                 break
 
     finally:
-        # Cleanup: Delete agents and close clients
         try:
-            if guess_agent:
-                await client.agents.delete_agent(guess_agent.id)
-            if judge_agent:
-                await client.agents.delete_agent(judge_agent.id)
+            if student_agent:
+                await client.agents.delete_agent(student_agent.id)
+            if teacher_agent:
+                await client.agents.delete_agent(teacher_agent.id)
             await client.close()
             await credential.close()
         except Exception:

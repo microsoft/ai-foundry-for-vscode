@@ -420,15 +420,24 @@
               },
               "options": {
                 "type": "object",
-                "description": "Options for mcp tool",
+                "description": "Options for MCP tool",
                 "properties": {
                   "server_url": {
                     "type": "string",
-                    "description": "The URL of the MCP server"
+                    "description": "The URL of the MCP server",
+                    "pattern": "^https?:\\/\\/[^\\s\\/$.?#].[^\\s]*$"
                   },
                   "server_label": {
                     "type": "string",
-                    "description": "The label for the MCP server"
+                    "description": "The label for the MCP server",
+                    "pattern": "^[a-zA-Z0-9_]+$"
+                  },
+                  "allowed_tools": {
+                    "type": "array",
+                    "description": "Optional array of allowed tool names from the MCP server",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 },
                 "required": [

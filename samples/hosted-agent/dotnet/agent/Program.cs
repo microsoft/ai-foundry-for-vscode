@@ -1,13 +1,16 @@
+﻿// Copyright (c) Microsoft. All rights reserved.
+
 // Seattle Hotel Agent - A simple agent with a tool to find hotels in Seattle.
-// Uses Microsoft Agent Framework with Azure AI Foundry.
+// Uses Microsoft Agent Framework with Microsoft Foundry.
 // Ready for deployment to Foundry Hosted Agent service.
+
+#pragma warning disable CA2252 // AIProjectClient and Agents API require opting into preview features
 
 using System.ComponentModel;
 using System.Globalization;
 using System.Text;
-using System.ClientModel.Primitives;
+
 using Azure.AI.AgentServer.AgentFramework.Extensions;
-using Azure.AI.OpenAI;
 using Azure.AI.Projects;
 using Azure.Identity;
 using Microsoft.Agents.AI;
@@ -16,7 +19,7 @@ using Microsoft.Extensions.AI;
 // Get configuration from environment variables
 var endpoint = Environment.GetEnvironmentVariable("AZURE_AI_PROJECT_ENDPOINT")
     ?? throw new InvalidOperationException("AZURE_AI_PROJECT_ENDPOINT is not set.");
-var deploymentName = Environment.GetEnvironmentVariable("MODEL_DEPLOYMENT_NAME") ?? "gpt-4.1-mini";
+var deploymentName = Environment.GetEnvironmentVariable("MODEL_DEPLOYMENT_NAME") ?? "gpt-5.4-mini";
 Console.WriteLine($"Project Endpoint: {endpoint}");
 Console.WriteLine($"Model Deployment: {deploymentName}");
 // Simulated hotel data for Seattle
@@ -41,12 +44,12 @@ string GetAvailableHotels(
         // Parse dates
         if (!DateTime.TryParseExact(checkInDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var checkIn))
         {
-            return $"Error parsing check-in date. Please use YYYY-MM-DD format.";
+            return "Error parsing check-in date. Please use YYYY-MM-DD format.";
         }
 
         if (!DateTime.TryParseExact(checkOutDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var checkOut))
         {
-            return $"Error parsing check-out date. Please use YYYY-MM-DD format.";
+            return "Error parsing check-out date. Please use YYYY-MM-DD format.";
         }
 
         // Validate dates
@@ -67,17 +70,19 @@ string GetAvailableHotels(
 
         // Build response
         var result = new StringBuilder();
-        result.AppendLine($"Available hotels in Seattle from {checkInDate} to {checkOutDate} ({nights} nights):");
-        result.AppendLine();
+        result
+            .AppendLine($"Available hotels in Seattle from {checkInDate} to {checkOutDate} ({nights} nights):")
+            .AppendLine();
 
         foreach (var hotel in availableHotels)
         {
             var totalCost = hotel.PricePerNight * nights;
-            result.AppendLine($"**{hotel.Name}**");
-            result.AppendLine($"   Location: {hotel.Location}");
-            result.AppendLine($"   Rating: {hotel.Rating}/5");
-            result.AppendLine($"   ${hotel.PricePerNight}/night (Total: ${totalCost})");
-            result.AppendLine();
+            result
+                .AppendLine($"**{hotel.Name}**")
+                .AppendLine($"   Location: {hotel.Location}")
+                .AppendLine($"   Rating: {hotel.Rating}/5")
+                .AppendLine($"   ${hotel.PricePerNight}/night (Total: ${totalCost})")
+                .AppendLine();
         }
 
         return result.ToString();
@@ -88,29 +93,15 @@ string GetAvailableHotels(
     }
 }
 
-// Create chat client using AIProjectClient to get the OpenAI connection from the project
-var credential = new DefaultAzureCredential();
-AIProjectClient projectClient = new AIProjectClient(new Uri(endpoint), credential);
+// WARNING: DefaultAzureCredential is convenient for development but requires careful consideration in production.
+// In production, consider using a specific credential (e.g., ManagedIdentityCredential) to avoid
+// latency issues, unintended credential probing, and potential security risks from fallback mechanisms.
+AIProjectClient aiProjectClient = new(new Uri(endpoint), new DefaultAzureCredential());
 
-// Get the OpenAI connection from the project
-ClientConnection connection = projectClient.GetConnection(typeof(AzureOpenAIClient).FullName!);
-
-if (!connection.TryGetLocatorAsUri(out Uri? openAiEndpoint) || openAiEndpoint is null)
-{
-    throw new InvalidOperationException("Failed to get OpenAI endpoint from project connection.");
-}
-openAiEndpoint = new Uri($"https://{openAiEndpoint.Host}");
-Console.WriteLine($"OpenAI Endpoint: {openAiEndpoint}");
-
-var chatClient = new AzureOpenAIClient(openAiEndpoint, credential)
-    .GetChatClient(deploymentName)
-    .AsIChatClient()
-    .AsBuilder()
-    .UseOpenTelemetry(sourceName: "Agents", configure: cfg => cfg.EnableSensitiveData = false)
-    .Build();
-
-var agent = new ChatClientAgent(chatClient,
+// Create Foundry agent with hotel search tool
+AIAgent agent = await aiProjectClient.CreateAIAgentAsync(
     name: "SeattleHotelAgent",
+    model: deploymentName,
     instructions: """
         You are a helpful travel assistant specializing in finding hotels in Seattle, Washington.
 
@@ -124,13 +115,18 @@ var agent = new ChatClientAgent(chatClient,
         Be conversational and helpful. If users ask about things outside of Seattle hotels,
         politely let them know you specialize in Seattle hotel recommendations.
         """,
-    tools: [AIFunctionFactory.Create(GetAvailableHotels)])
-    .AsBuilder()
-    .UseOpenTelemetry(sourceName: "Agents", configure: cfg => cfg.EnableSensitiveData = false)
-    .Build();
+    tools: [AIFunctionFactory.Create(GetAvailableHotels)]);
 
-Console.WriteLine("Seattle Hotel Agent Server running on http://localhost:8088");
-await agent.RunAIAgentAsync(telemetrySourceName: "Agents");
+try
+{
+    Console.WriteLine("Seattle Hotel Agent Server running on http://localhost:8088");
+    await agent.RunAIAgentAsync(telemetrySourceName: "Agents");
+}
+finally
+{
+    // Cleanup server-side agent
+    await aiProjectClient.Agents.DeleteAgentAsync(agent.Name);
+}
 
 // Hotel record for simulated data
-record Hotel(string Name, int PricePerNight, double Rating, string Location);
+internal sealed record Hotel(string Name, int PricePerNight, double Rating, string Location);

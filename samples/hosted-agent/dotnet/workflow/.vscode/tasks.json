@@ -1,0 +1,87 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Validate prerequisites",
+            "type": "aitk",
+            "command": "debug-check-prerequisites",
+            "args": {
+                "portOccupancy": [8088]
+            }
+        },
+        {
+            "label": "build",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/{{SafeProjectName}}.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary;ForceNoAlign"
+            ],
+            "problemMatcher": "$msCompile",
+            "dependsOn": ["Validate prerequisites"]
+        },
+        {
+            "label": "Run Agent/Workflow HTTP Server",
+            "type": "shell",
+            "command": "dotnet run --project ${workspaceFolder}/{{SafeProjectName}}.csproj --no-build",
+            "isBackground": true,
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "ASPNETCORE_URLS": "http://localhost:8088",
+                    "ASPNETCORE_ENVIRONMENT": "Development"
+                }
+            },
+            "dependsOn": ["build"],
+            "problemMatcher": {
+                "pattern": [
+                    {
+                        "regexp": "^.*$",
+                        "file": 0,
+                        "location": 1,
+                        "message": 2
+                    }
+                ],
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".*",
+                    "endsPattern": "Application startup complete|running on|Now listening on"
+                }
+            }
+        },
+        {
+            "label": "Open Agent Inspector",
+            "type": "shell",
+            "command": "echo '${input:openAgentInspector}'",
+            "presentation": {
+                "reveal": "never"
+            },
+            "dependsOn": ["Run Agent/Workflow HTTP Server"]
+        },
+        {
+            "label": "Terminate All Tasks",
+            "command": "echo ${input:terminate}",
+            "type": "shell",
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "openAgentInspector",
+            "type": "command",
+            "command": "ai-mlstudio.openTestTool",
+            "args": {
+                "triggeredFrom": "tasks",
+                "port": 8088
+            }
+        },
+        {
+            "id": "terminate",
+            "type": "command",
+            "command": "workbench.action.tasks.terminate",
+            "args": "terminateAll"
+        }
+    ]
+}

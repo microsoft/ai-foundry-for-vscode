@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      font-family:
+        -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Helvetica,
+        Arial, sans-serif;
+    "
+  >
+    <!-- Wrapper -->
+    <table
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      style="padding: 32px 16px"
+    >
+      <tr>
+        <td align="center">
+          <!-- Card -->
+          <table
+            width="600"
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              background-color: #ffffff;
+              border-radius: 8px;
+              overflow: hidden;
+              box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            "
+          >
+            <!-- Status bar -->
+            <tr>
+              <td
+                style="background-color:${EMAIL_HEADER_COLOR};padding:4px 0;font-size:0;"
+              >
+                &nbsp;
+              </td>
+            </tr>
+
+            <!-- Header -->
+            <tr>
+              <td style="padding: 28px 32px 20px">
+                <p
+                  style="
+                    margin: 0 0 8px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    color: #888888;
+                  "
+                >
+                  GitHub Actions
+                </p>
+                <h1
+                  style="
+                    margin: 0 0 12px;
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: #111111;
+                    line-height: 1.3;
+                  "
+                >
+                  Hosted Agent Sample Validation
+                </h1>
+                <!-- Status badge -->
+                <span
+                  style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;letter-spacing:0.04em;background-color:${EMAIL_HEADER_COLOR};color:#ffffff;"
+                  >${EMAIL_OVERALL}</span
+                >
+                <span style="margin-left: 12px; font-size: 14px; color: #555555"
+                  >${EMAIL_PASSED}&thinsp;/&thinsp;${EMAIL_TOTAL} samples
+                  passed</span
+                >
+              </td>
+            </tr>
+
+            <!-- Divider -->
+            <tr>
+              <td style="padding: 0 32px">
+                <div style="height: 1px; background-color: #f0f0f0"></div>
+              </td>
+            </tr>
+
+            <!-- Results table -->
+            <tr>
+              <td style="padding: 20px 32px 8px">
+                <p
+                  style="
+                    margin: 0 0 12px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    color: #888888;
+                  "
+                >
+                  Sample Results
+                </p>
+                <table
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  style="border-collapse: collapse"
+                >
+                  <thead>
+                    <tr style="background-color: #fafafa">
+                      <th
+                        style="
+                          padding: 8px 12px;
+                          text-align: left;
+                          font-size: 12px;
+                          font-weight: 600;
+                          color: #555555;
+                          border-bottom: 1px solid #eeeeee;
+                          width: 110px;
+                          border-right: 2px solid #eeeeee;
+                        "
+                      >
+                        Branch
+                      </th>
+                      <th
+                        style="
+                          padding: 8px 12px;
+                          text-align: left;
+                          font-size: 12px;
+                          font-weight: 600;
+                          color: #555555;
+                          border-bottom: 1px solid #eeeeee;
+                        "
+                      >
+                        Sample
+                      </th>
+                      <th
+                        style="
+                          padding: 8px 12px;
+                          text-align: left;
+                          font-size: 12px;
+                          font-weight: 600;
+                          color: #555555;
+                          border-bottom: 1px solid #eeeeee;
+                          width: 100px;
+                        "
+                      >
+                        Result
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${EMAIL_ROWS}
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Divider -->
+            <tr>
+              <td style="padding: 16px 32px 0">
+                <div style="height: 1px; background-color: #f0f0f0"></div>
+              </td>
+            </tr>
+
+            <!-- Run details -->
+            <tr>
+              <td style="padding: 20px 32px 8px">
+                <p
+                  style="
+                    margin: 0 0 12px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    color: #888888;
+                  "
+                >
+                  Run Details
+                </p>
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td
+                      style="
+                        padding: 5px 0;
+                        font-size: 13px;
+                        color: #888888;
+                        width: 120px;
+                        vertical-align: top;
+                      "
+                    >
+                      Workflow
+                    </td>
+                    <td style="padding: 5px 0; font-size: 13px; color: #111111">
+                      ${EMAIL_WORKFLOW}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      style="
+                        padding: 5px 0;
+                        font-size: 13px;
+                        color: #888888;
+                        vertical-align: top;
+                      "
+                    >
+                      Branch
+                    </td>
+                    <td style="padding: 5px 0; font-size: 13px; color: #111111">
+                      <code
+                        style="
+                          background: #f5f5f5;
+                          padding: 1px 6px;
+                          border-radius: 4px;
+                          font-size: 12px;
+                        "
+                        >${EMAIL_BRANCH}</code
+                      >
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      style="
+                        padding: 5px 0;
+                        font-size: 13px;
+                        color: #888888;
+                        vertical-align: top;
+                      "
+                    >
+                      Commit
+                    </td>
+                    <td style="padding: 5px 0; font-size: 13px; color: #111111">
+                      <code
+                        style="
+                          background: #f5f5f5;
+                          padding: 1px 6px;
+                          border-radius: 4px;
+                          font-size: 12px;
+                        "
+                        >${EMAIL_COMMIT}</code
+                      >
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      style="
+                        padding: 5px 0;
+                        font-size: 13px;
+                        color: #888888;
+                        vertical-align: top;
+                      "
+                    >
+                      Triggered by
+                    </td>
+                    <td style="padding: 5px 0; font-size: 13px; color: #111111">
+                      ${EMAIL_TRIGGERED_BY} &middot; ${EMAIL_ACTOR}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      style="
+                        padding: 5px 0;
+                        font-size: 13px;
+                        color: #888888;
+                        vertical-align: top;
+                      "
+                    >
+                      Run
+                    </td>
+                    <td style="padding: 5px 0; font-size: 13px; color: #111111">
+                      #${EMAIL_RUN_NUMBER} &middot;
+                      <code
+                        style="
+                          background: #f5f5f5;
+                          padding: 1px 6px;
+                          border-radius: 4px;
+                          font-size: 12px;
+                        "
+                        >${EMAIL_RUN_ID}</code
+                      >
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- CTA -->
+            <tr>
+              <td style="padding: 20px 32px 32px">
+                <a
+                  href="${EMAIL_RUN_URL}"
+                  style="
+                    display: inline-block;
+                    padding: 10px 20px;
+                    background-color: #0078d4;
+                    color: #ffffff;
+                    text-decoration: none;
+                    border-radius: 6px;
+                    font-size: 13px;
+                    font-weight: 600;
+                  "
+                  >View Run Log &rarr;</a
+                >
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td
+                style="
+                  padding: 16px 32px;
+                  background-color: #fafafa;
+                  border-top: 1px solid #f0f0f0;
+                "
+              >
+                <p style="margin: 0; font-size: 11px; color: #aaaaaa">
+                  Sent by GitHub Actions &middot;
+                  <a
+                    href="${EMAIL_SERVER_URL}/${EMAIL_REPOSITORY}"
+                    style="color: #aaaaaa"
+                    >${EMAIL_REPOSITORY}</a
+                  >
+                </p>
+              </td>
+            </tr>
+          </table>
+          <!-- /Card -->
+        </td>
+      </tr>
+    </table>
+    <!-- /Wrapper -->
+  </body>
+</html>

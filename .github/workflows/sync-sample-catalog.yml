@@ -62,14 +62,17 @@ jobs:
             exit 0
           fi
 
-          if git diff --quiet -- "$catalog_file"; then
+          # Stage the file so git diff detects both new and modified files
+          git add "$catalog_file"
+
+          if git diff --cached --quiet -- "$catalog_file"; then
             echo "No changes to sample catalog."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "Catalog has changes:"
-          git diff --stat -- "$catalog_file"
+          git diff --cached --stat -- "$catalog_file"
 
           {
             echo "## Sample Catalog Sync"

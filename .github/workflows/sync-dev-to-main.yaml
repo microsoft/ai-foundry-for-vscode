@@ -1,0 +1,96 @@
+name: Sync Dev to Main
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 1 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync dev to main (preserve version-manifest.json)
+        id: sync
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          EXCLUDED_FILE="samples/hosted-agent/version-manifest.json"
+
+          git fetch origin dev main
+
+          # Save the current version-manifest.json from main
+          git show origin/main:"$EXCLUDED_FILE" > /tmp/version-manifest.json
+
+          SYNC_BRANCH="sync/dev-to-main-$(date +%Y%m%d%H%M%S)"
+          git checkout -b "$SYNC_BRANCH" origin/main
+
+          # Merge dev, automatically resolving conflicts by preferring dev
+          git merge origin/dev --no-edit -X theirs || true
+
+          # Restore the excluded file from main
+          cp /tmp/version-manifest.json "$EXCLUDED_FILE"
+          git add "$EXCLUDED_FILE"
+
+          # Check if there are any staged changes to the excluded file
+          if git diff --cached --quiet "$EXCLUDED_FILE"; then
+            echo "version-manifest.json unchanged after restore, no extra commit needed"
+          else
+            git commit --amend --no-edit
+          fi
+
+          # Check if there is any diff between the sync branch and main
+          if git diff --quiet origin/main; then
+            echo "No differences between dev and main (after exclusions). Skipping PR creation."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          git push origin "$SYNC_BRANCH"
+          echo "sync_branch=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Close previous sync PRs and clean up branches
+        if: steps.sync.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh pr list --base main --state open --json number,headRefName --jq '.[] | select(.headRefName | startswith("sync/dev-to-main")) | (.number | tostring)' | while read -r pr_number; do
+            echo "Closing PR #$pr_number"
+            gh pr close "$pr_number" --comment "Superseded by a newer sync PR." --delete-branch
+          done
+
+      - name: Create Pull Request
+        if: steps.sync.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "${{ steps.sync.outputs.sync_branch }}" \
+            --title "ci: sync dev to main" \
+            --body "Automated sync from \`dev\` to \`main\`.
+
+          This PR is created by an automated script. Please review carefully before merging."

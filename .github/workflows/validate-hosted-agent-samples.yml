@@ -1,0 +1,276 @@
+name: Validate Hosted Agent Samples
+
+on:
+  schedule:
+    - cron: "0 1 * * *" # Daily at 9:00 AM Beijing time (UTC+8 → 01:00 UTC)
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: "[${{ matrix.branch }}] ${{ matrix.language }}/${{ matrix.type }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Run all matrix jobs even if one fails
+      matrix:
+        branch: [dev, main, pre-release, stable]
+        language: [dotnet, python]
+        type: [agent, workflow]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+
+      - name: Prepare sample directory
+        id: prepare
+        env:
+          SAFE_PROJECT_NAME: SampleAgent
+          AGENT_NAME: sample-agent
+        run: |
+          WORK_DIR=$(mktemp -d)
+          cp -r "samples/hosted-agent/${{ matrix.language }}/${{ matrix.type }}/." "$WORK_DIR/"
+
+          # Rename any files whose names contain the SafeProjectName placeholder
+          find "$WORK_DIR" -name '*{{SafeProjectName}}*' | while read -r f; do
+            mv "$f" "$(echo "$f" | sed "s/{{SafeProjectName}}/$SAFE_PROJECT_NAME/g")"
+          done
+
+          # Replace placeholder values inside all text files
+          find "$WORK_DIR" -type f -print0 \
+            | xargs -0 sed -i \
+                -e "s/{{SafeProjectName}}/$SAFE_PROJECT_NAME/g" \
+                -e "s/{{AgentName}}/$AGENT_NAME/g"
+
+          echo "work_dir=$WORK_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          docker build "${{ steps.prepare.outputs.work_dir }}" \
+            -t "sample-${{ matrix.language }}-${{ matrix.type }}:ci-test"
+
+      - name: Run container smoke test
+        run: |
+          CONTAINER="test-${{ matrix.language }}-${{ matrix.type }}"
+
+          docker run -d \
+            --name "$CONTAINER" \
+            -p 8088:8088 \
+            -e AZURE_AI_PROJECT_ENDPOINT="https://fake.services.ai.azure.com" \
+            -e PROJECT_ENDPOINT="https://fake.services.ai.azure.com" \
+            -e MODEL_DEPLOYMENT_NAME="gpt-4o" \
+            "sample-${{ matrix.language }}-${{ matrix.type }}:ci-test"
+
+          # Poll port 8088 for up to 30 seconds
+          echo "Waiting for server to start..."
+          for i in $(seq 1 10); do
+            http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://localhost:8088/ || echo "000")
+            if [ "$http_code" != "000" ]; then
+              echo "✅ Server responded with HTTP $http_code — container is healthy"
+              break
+            fi
+            if [ "$i" -eq 10 ]; then
+              echo "❌ Server did not start within 30 seconds"
+              docker logs "$CONTAINER"
+              docker rm -f "$CONTAINER" || true
+              exit 1
+            fi
+            echo "  attempt $i/10 — not yet ready, retrying in 3s..."
+            sleep 3
+          done
+
+          # Confirm the container is still running (didn't crash after responding)
+          running=$(docker inspect -f '{{.State.Running}}' "$CONTAINER")
+          if [ "$running" != "true" ]; then
+            echo "❌ Container exited unexpectedly"
+            docker logs "$CONTAINER"
+            docker rm -f "$CONTAINER" || true
+            exit 1
+          fi
+
+          docker rm -f "$CONTAINER"
+
+      - name: Save result artifact
+        if: always()
+        run: |
+          mkdir -p /tmp/ci-result
+          echo "${{ job.status }}" > /tmp/ci-result/status.txt
+          echo "${{ matrix.branch }}/${{ matrix.language }}/${{ matrix.type }}" > /tmp/ci-result/sample.txt
+
+      - name: Upload result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.branch }}-${{ matrix.language }}-${{ matrix.type }}
+          path: /tmp/ci-result/
+
+  notify:
+    name: Send notification
+    needs: [validate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: result-*
+          path: results/
+
+      - name: Compute summary and render email
+        id: email
+        env:
+          EMAIL_WORKFLOW: "${{ github.workflow }}"
+          EMAIL_BRANCH: "${{ github.ref_name }}"
+          EMAIL_COMMIT: "${{ github.sha }}"
+          EMAIL_TRIGGERED_BY: "${{ github.event_name }}"
+          EMAIL_ACTOR: "${{ github.actor }}"
+          EMAIL_RUN_NUMBER: "${{ github.run_number }}"
+          EMAIL_RUN_ID: "${{ github.run_id }}"
+          EMAIL_RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          EMAIL_REPOSITORY: "${{ github.repository }}"
+          EMAIL_SERVER_URL: "${{ github.server_url }}"
+        run: |
+          total=0
+          passed=0
+
+          # Collect results into a temp file: "sample|status"
+          tmpdata=$(mktemp)
+          for dir in results/result-*/; do
+            status=$(cat "$dir/status.txt" 2>/dev/null || echo "unknown")
+            sample=$(cat "$dir/sample.txt" 2>/dev/null || echo "unknown")
+            total=$((total + 1))
+            [ "$status" = "success" ] && passed=$((passed + 1))
+            printf '%s|%s\n' "$sample" "$status" >> "$tmpdata"
+          done
+
+          # Sort by branch (alphabetical on full "branch/language/type" line)
+          tmpsorted=$(mktemp)
+          sort "$tmpdata" > "$tmpsorted"
+          rm -f "$tmpdata"
+
+          # Count rows per branch
+          declare -A branch_count=()
+          while IFS='|' read -r sample _; do
+            b="${sample%%/*}"
+            branch_count["$b"]=$((${branch_count["$b"]:-0} + 1))
+          done < "$tmpsorted"
+
+          # Build rows with rowspan on the Branch column
+          rows=""
+          prev_branch=""
+          cell_base="padding:8px 12px;border-bottom:1px solid #eeeeee;font-size:13px;color:#111111;"
+          while IFS='|' read -r sample status; do
+            branch="${sample%%/*}"
+            rest="${sample#*/}"
+            if [ "$status" = "success" ]; then
+              icon="&#x2705;"
+              bg=""
+            else
+              icon="&#x274C;"
+              bg="background-color:#fff8f8;"
+            fi
+            if [ "$branch" != "$prev_branch" ]; then
+              count=${branch_count["$branch"]}
+              branch_cell="<td rowspan=\"$count\" style=\"${cell_base}border-right:2px solid #eeeeee;vertical-align:middle;text-align:center;\"><code style=\"background:#f5f5f5;padding:2px 8px;border-radius:4px;font-size:12px;\">$branch</code></td>"
+              prev_branch="$branch"
+            else
+              branch_cell=""
+            fi
+            rows="${rows}<tr>${branch_cell}<td style=\"${cell_base}${bg}\"><code style=\"background:#f5f5f5;padding:1px 6px;border-radius:4px;font-size:12px;\">$rest</code></td><td style=\"${cell_base}${bg}white-space:nowrap;\">$icon $status</td></tr>"
+          done < "$tmpsorted"
+          rm -f "$tmpsorted"
+          failed=$((total - passed))
+          if [ "$failed" -eq 0 ]; then
+            overall="PASSED"
+            header_color="#137333"
+          else
+            overall="FAILED"
+            header_color="#d93025"
+          fi
+          export EMAIL_OVERALL="$overall"
+          export EMAIL_PASSED="$passed"
+          export EMAIL_TOTAL="$total"
+          export EMAIL_ROWS="$rows"
+          export EMAIL_HEADER_COLOR="$header_color"
+          body=$(envsubst \
+            '${EMAIL_OVERALL} ${EMAIL_PASSED} ${EMAIL_TOTAL} ${EMAIL_ROWS} ${EMAIL_HEADER_COLOR}
+             ${EMAIL_WORKFLOW} ${EMAIL_BRANCH} ${EMAIL_COMMIT}
+             ${EMAIL_TRIGGERED_BY} ${EMAIL_ACTOR} ${EMAIL_RUN_NUMBER} ${EMAIL_RUN_ID}
+             ${EMAIL_RUN_URL} ${EMAIL_REPOSITORY} ${EMAIL_SERVER_URL}' \
+            < .github/email-templates/validate-samples-failure.html)
+          body=$(printf '%s' "$body" | tr -d '\n' | sed 's/>[[:space:]]\+</></g')
+          echo "overall=$overall" >> "$GITHUB_OUTPUT"
+          echo "passed=$passed"   >> "$GITHUB_OUTPUT"
+          echo "total=$total"     >> "$GITHUB_OUTPUT"
+          echo "body<<DELIM"      >> "$GITHUB_OUTPUT"
+          echo "$body"            >> "$GITHUB_OUTPUT"
+          echo "DELIM"            >> "$GITHUB_OUTPUT"
+
+      - name: Send notification
+        env:
+          TO: ${{ secrets.MAIL_TO }}
+          SUBJECT: "[${{ steps.email.outputs.overall }}] Validate Hosted Agent Samples (${{ steps.email.outputs.passed }}/${{ steps.email.outputs.total }} Passed)"
+          BODY: ${{ steps.email.outputs.body }}
+          LOGIC_APP_URL: ${{ secrets.LOGIC_APP_URL }}
+          MAIL_CLIENT_ID: ${{ secrets.MAIL_CLIENT_ID }}
+          MAIL_CLIENT_SECRET: ${{ secrets.MAIL_CLIENT_SECRET }}
+          MAIL_TENANT_ID: ${{ secrets.MAIL_TENANT_ID }}
+        run: |
+          if [ -z "$TO" ] || [ -z "$LOGIC_APP_URL" ]; then
+            echo "⚠️  MAIL_TO or LOGIC_APP_URL not configured. Skipping email send."
+            exit 0
+          fi
+
+          auth_header=""
+          if [ -n "$MAIL_CLIENT_ID" ] && [ -n "$MAIL_CLIENT_SECRET" ] && [ -n "$MAIL_TENANT_ID" ]; then
+            echo "🔐 Getting Azure AD access token..."
+            response=$(curl -s \
+              --request POST \
+              --header "Content-Type: application/x-www-form-urlencoded" \
+              --data "grant_type=client_credentials&client_id=${MAIL_CLIENT_ID}&client_secret=${MAIL_CLIENT_SECRET}&resource=https://management.core.windows.net" \
+              "https://login.microsoftonline.com/${MAIL_TENANT_ID}/oauth2/token")
+            access_token=$(echo "$response" | jq -r '. | select(.access_token) | .access_token')
+            if [ -z "$access_token" ] || [ "$access_token" = "null" ]; then
+              echo "⚠️  Failed to get access token. Skipping email send."
+              exit 0
+            fi
+            echo "✅ Got access token"
+            auth_header="Authorization: Bearer $access_token"
+          fi
+
+          body_file=$(mktemp)
+          printf '%s' "$BODY" > "$body_file"
+          payload=$(jq -n \
+            --arg to      "$TO" \
+            --arg subject "$SUBJECT" \
+            --rawfile body "$body_file" \
+            '{to: $to, subject: $subject, body: $body, bodyHtml: $body, contentType: "text/html"}')
+          rm -f "$body_file"
+
+          if [ -n "$auth_header" ]; then
+            http_code=$(curl -s -o /tmp/email_response.txt -w "%{http_code}" \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --header "$auth_header" \
+              --data "$payload" \
+              "$LOGIC_APP_URL")
+          else
+            http_code=$(curl -s -o /tmp/email_response.txt -w "%{http_code}" \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --data "$payload" \
+              "$LOGIC_APP_URL")
+          fi
+
+          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            echo "✅ Email sent successfully! (HTTP $http_code)"
+          else
+            echo "⚠️  Email send failed with HTTP $http_code"
+            cat /tmp/email_response.txt 2>/dev/null || true
+          fi

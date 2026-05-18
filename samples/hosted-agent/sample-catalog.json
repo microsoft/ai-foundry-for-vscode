@@ -1,7 +1,7 @@
 {
     "commitSha": "0ce024a9ebf40f5dffe2b624043dece254a63438",
     "repo": "https://github.com/microsoft-foundry/foundry-samples/",
-    "generatedAt": "2026-05-18T03:16:00Z",
+    "generatedAt": "2026-05-08T08:36:42Z",
     "dimensions": {
         "language": {
             "title": "Select a Language",
@@ -28,10 +28,6 @@
                 {
                     "id": "bring-your-own",
                     "displayName": "Bring Your Own"
-                },
-                {
-                    "id": "copilot-sdk",
-                    "displayName": "Copilot SDK"
                 }
             ]
         },
@@ -129,7 +125,7 @@
         },
         {
             "language": "python",
-            "framework": "copilot-sdk",
+            "framework": "bring-your-own",
             "protocol": "invocations",
             "displayName": "Multi-Turn Chat",
             "description": "Streams Copilot SDK session events with multi-turn conversation support.",

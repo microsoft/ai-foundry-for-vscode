@@ -28,6 +28,7 @@ const REPO_ROOT = process.env.REPO_ROOT || resolve(__dirname, '..', '..');
 const SAMPLES_REPO_URL = process.env.SAMPLES_REPO_URL || 'https://github.com/microsoft-foundry/foundry-samples/';
 const SAMPLES_REPO_API = 'https://api.github.com/repos/microsoft-foundry/foundry-samples';
 const OUTPUT_PATH = join(REPO_ROOT, 'samples', 'hosted-agent', 'sample-catalog.json');
+const OVERRIDES_PATH = join(REPO_ROOT, 'samples', 'hosted-agent', 'sample-overrides.json');
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 
@@ -50,6 +51,7 @@ const DIMENSION_DEFAULTS = {
         options: {
             'agent-framework': 'Agent Framework',
             'bring-your-own': 'Bring Your Own',
+            'copilot-sdk': 'Copilot SDK',
         },
     },
     protocol: {
@@ -462,6 +464,62 @@ function mergeExistingDisplayFields(templates) {
 }
 
 /**
+ * Load source-controlled per-path overrides. Returns an empty map when the
+ * file is missing or unreadable so generation never fails on it.
+ *
+ * @returns {Map<string, Record<string, unknown>>}
+ */
+function loadOverrides() {
+    /** @type {Map<string, Record<string, unknown>>} */
+    const byPath = new Map();
+    if (!existsSync(OVERRIDES_PATH)) {
+        return byPath;
+    }
+    try {
+        const raw = JSON.parse(readFileSync(OVERRIDES_PATH, 'utf-8'));
+        const entries = (raw && typeof raw === 'object' && raw.byPath) || {};
+        for (const [path, fields] of Object.entries(entries)) {
+            if (fields && typeof fields === 'object') {
+                byPath.set(path, /** @type {Record<string, unknown>} */ (fields));
+            }
+        }
+    } catch (/** @type {any} */ err) {
+        console.warn(`Warning: could not read sample-overrides.json: ${err.message}`);
+    }
+    return byPath;
+}
+
+/**
+ * Shallow-merge per-path overrides onto scanned templates. Lets us correct
+ * structural fields (e.g. `framework: "copilot-sdk"` for a sample that lives
+ * under `bring-your-own/` upstream) without touching upstream or hand-editing
+ * the generated catalog. Unknown override paths are logged but never fail
+ * the build — upstream may have moved a sample.
+ *
+ * @param {Array<{path: string} & Record<string, unknown>>} templates
+ * @param {Map<string, Record<string, unknown>>} overrides
+ */
+function applyOverrides(templates, overrides) {
+    if (overrides.size === 0) {
+        return;
+    }
+    /** @type {Set<string>} */
+    const seenPaths = new Set();
+    for (const template of templates) {
+        seenPaths.add(template.path);
+        const fields = overrides.get(template.path);
+        if (fields) {
+            Object.assign(template, fields);
+        }
+    }
+    for (const path of overrides.keys()) {
+        if (!seenPaths.has(path)) {
+            console.warn(`Warning: override for "${path}" did not match any scanned template; check sample-overrides.json.`);
+        }
+    }
+}
+
+/**
  * Auto-fill empty displayName and description using LLM (with README as context).
  * Falls back to directory-name-based displayName if LLM is unavailable.
  * Only fills fields that are still empty after merging existing values.
@@ -514,7 +572,11 @@ async function main() {
     // Step 1: Preserve existing PM-edited or previously auto-filled values
     mergeExistingDisplayFields(templates);
 
-    // Step 2: Auto-fill remaining empty fields (LLM if configured, else directory name fallback)
+    // Step 2: Apply source-controlled per-path overrides (structural fields like
+    // `framework` that the upstream tree layout cannot express on its own).
+    applyOverrides(templates, loadOverrides());
+
+    // Step 3: Auto-fill remaining empty fields (LLM if configured, else directory name fallback)
     await autoFillDisplayFields(templates, commitSha);
 
     const dimensions = buildDimensions(templates);

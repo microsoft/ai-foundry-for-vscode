@@ -465,14 +465,7 @@ function mergeExistingDisplayFields(templates) {
 
 /**
  * Load source-controlled per-path overrides. Returns an empty map when the
- * overrides file is missing or unreadable so generation never fails on it.
- *
- * The overrides file lets us correct individual sample metadata (e.g. setting
- * `framework: "copilot-sdk"` for a sample that lives under `bring-your-own/`
- * in the upstream tree but is conceptually a different framework) without
- * touching upstream or editing the generated catalog by hand. Every field on
- * a template is overridable; structural fields (`language`, `framework`,
- * `protocol`, `requiresModel`) are the typical use case.
+ * file is missing or unreadable so generation never fails on it.
  *
  * @returns {Map<string, Record<string, unknown>>}
  */
@@ -497,10 +490,11 @@ function loadOverrides() {
 }
 
 /**
- * Apply per-path overrides to scanned templates. Override fields win over the
- * values derived from the upstream tree, so the catalog is deterministic
- * across regenerations regardless of LLM output. Unknown override paths are
- * logged but never fail the build (upstream may have moved a sample).
+ * Shallow-merge per-path overrides onto scanned templates. Lets us correct
+ * structural fields (e.g. `framework: "copilot-sdk"` for a sample that lives
+ * under `bring-your-own/` upstream) without touching upstream or hand-editing
+ * the generated catalog. Unknown override paths are logged but never fail
+ * the build — upstream may have moved a sample.
  *
  * @param {Array<{path: string} & Record<string, unknown>>} templates
  * @param {Map<string, Record<string, unknown>>} overrides

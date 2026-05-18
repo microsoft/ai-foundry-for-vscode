@@ -1,6 +1,4 @@
 {
-    "$schema": "./sample-overrides.schema.json",
-    "$comment": "Per-path field overrides applied AFTER scanning foundry-samples and BEFORE LLM auto-fill. Use sparingly; prefer fixing upstream when possible. Keys under 'byPath' are exact paths from sample-catalog.json's templates[].path. Values are partial templates merged on top of the scanned template.",
     "byPath": {
         "samples/python/hosted-agents/bring-your-own/invocations/github-copilot": {
             "framework": "copilot-sdk"

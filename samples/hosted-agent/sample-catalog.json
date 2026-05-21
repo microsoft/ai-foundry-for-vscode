@@ -1,7 +1,7 @@
 {
     "commitSha": "0ce024a9ebf40f5dffe2b624043dece254a63438",
     "repo": "https://github.com/microsoft-foundry/foundry-samples/",
-    "generatedAt": "2026-05-18T05:49:24Z",
+    "generatedAt": "2026-05-21T08:04:45Z",
     "dimensions": {
         "language": {
             "title": "Select a Language",
@@ -62,7 +62,7 @@
             "displayName": "Session Management",
             "description": "Agent maintains conversation history using in-memory session storage.",
             "path": "samples/python/hosted-agents/agent-framework/invocations/01-basic",
-            "requiresModel": false
+            "requiresModel": true
         },
         {
             "language": "python",
@@ -89,7 +89,7 @@
             "displayName": "MCP Tools",
             "description": "Discovers and invokes tools from a remote MCP server at runtime.",
             "path": "samples/python/hosted-agents/agent-framework/responses/03-mcp",
-            "requiresModel": false
+            "requiresModel": true
         },
         {
             "language": "python",
@@ -125,7 +125,7 @@
             "displayName": "AG-UI Invocations",
             "description": "Handles AG-UI requests and streams agent events automatically.",
             "path": "samples/python/hosted-agents/bring-your-own/invocations/ag-ui",
-            "requiresModel": false
+            "requiresModel": true
         },
         {
             "language": "python",
@@ -323,7 +323,7 @@
             "displayName": "Human Approval Gate",
             "description": "Agent workflow that requires human review and approval before completing tasks.",
             "path": "samples/csharp/hosted-agents/bring-your-own/invocations/human-in-the-loop",
-            "requiresModel": false
+            "requiresModel": true
         },
         {
             "language": "csharp",
@@ -332,7 +332,7 @@
             "displayName": "Note-Taking",
             "description": "Saves and retrieves session-persistent notes using function calling.",
             "path": "samples/csharp/hosted-agents/bring-your-own/invocations/notetaking-agent",
-            "requiresModel": false
+            "requiresModel": true
         },
         {
             "language": "csharp",
@@ -350,7 +350,7 @@
             "displayName": "Background Responses",
             "description": "Processes research analysis requests asynchronously with streaming updates.",
             "path": "samples/csharp/hosted-agents/bring-your-own/responses/background-agent",
-            "requiresModel": false
+            "requiresModel": true
         },
         {
             "language": "csharp",
@@ -359,7 +359,7 @@
             "displayName": "Note-Taking",
             "description": "Saves and retrieves session-persistent notes using function calling.",
             "path": "samples/csharp/hosted-agents/bring-your-own/responses/notetaking-agent",
-            "requiresModel": false
+            "requiresModel": true
         }
     ]
 }

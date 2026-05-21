@@ -196,6 +196,49 @@ async function fetchAgentYaml(samplePath, ref) {
     }
 }
 
+/**
+ * Minimal parser for agent.manifest.yaml — detects whether the manifest
+ * declares a top-level `resources:` list that includes an entry of
+ * `kind: model`. Tracks the active top-level key so that `- kind: model`
+ * appearing under an unrelated list does not produce a false positive.
+ * @param {string} content
+ * @returns {{ hasModelResource: boolean }}
+ */
+function parseAgentManifestYaml(content) {
+    let inResources = false;
+    for (const rawLine of content.split('\n')) {
+        const stripped = rawLine.trim();
+        // Detect top-level key (column 0, e.g. `resources:`, `metadata:`).
+        if (/^[A-Za-z_][\w-]*:/.test(rawLine)) {
+            inResources = stripped.startsWith('resources:');
+            continue;
+        }
+        if (inResources && stripped.startsWith('- kind:')) {
+            const value = stripped.substring('- kind:'.length).trim();
+            if (value === 'model') {
+                return { hasModelResource: true };
+            }
+        }
+    }
+    return { hasModelResource: false };
+}
+
+/**
+ * Fetch and parse agent.manifest.yaml for a sample directory.
+ * @param {string} samplePath
+ * @param {string} ref
+ * @returns {Promise<{ hasModelResource: boolean } | null>}
+ */
+async function fetchAgentManifestYaml(samplePath, ref) {
+    const rawUrl = `https://raw.githubusercontent.com/microsoft-foundry/foundry-samples/${ref}/${samplePath}/agent.manifest.yaml`;
+    try {
+        const content = await fetchText(rawUrl);
+        return parseAgentManifestYaml(content);
+    } catch {
+        return null;
+    }
+}
+
 // Azure OpenAI configuration (from GitHub Secrets via env vars)
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || '';
 const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || '';
@@ -347,7 +390,10 @@ async function scanTemplates(commitSha) {
 
                 for (const templateDir of templateDirs) {
                     const templatePath = `${protocolPath}/${templateDir}`;
-                    const agentInfo = await fetchAgentYaml(templatePath, commitSha);
+                    const [agentInfo, manifestInfo] = await Promise.all([
+                        fetchAgentYaml(templatePath, commitSha),
+                        fetchAgentManifestYaml(templatePath, commitSha),
+                    ]);
 
                     /** @type {'responses' | 'invocations'} */
                     let protocol = /** @type {'responses' | 'invocations'} */ (protocolDir);
@@ -357,6 +403,10 @@ async function scanTemplates(commitSha) {
                         if (agentInfo.protocols.length > 0) {
                             protocol = agentInfo.protocols[0];
                         }
+                    }
+                    // Manifest-declared model resources also imply requiresModel.
+                    if (manifestInfo?.hasModelResource) {
+                        requiresModel = true;
                     }
 
                     templates.push({
@@ -374,7 +424,10 @@ async function scanTemplates(commitSha) {
             // Templates directly under framework dir (e.g. csharp/agent-framework/hello-world)
             for (const templateDir of directTemplateDirs) {
                 const templatePath = `${frameworkPath}/${templateDir}`;
-                const agentInfo = await fetchAgentYaml(templatePath, commitSha);
+                const [agentInfo, manifestInfo] = await Promise.all([
+                    fetchAgentYaml(templatePath, commitSha),
+                    fetchAgentManifestYaml(templatePath, commitSha),
+                ]);
 
                 /** @type {'responses' | 'invocations'} */
                 let protocol = 'responses';
@@ -384,6 +437,10 @@ async function scanTemplates(commitSha) {
                     if (agentInfo.protocols.length > 0) {
                         protocol = agentInfo.protocols[0];
                     }
+                }
+                // Manifest-declared model resources also imply requiresModel.
+                if (manifestInfo?.hasModelResource) {
+                    requiresModel = true;
                 }
 
                 templates.push({

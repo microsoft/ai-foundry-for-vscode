@@ -198,9 +198,9 @@ async function fetchAgentYaml(samplePath, ref) {
 
 /**
  * Minimal parser for agent.manifest.yaml — detects whether the manifest
- * declares a top-level `resources:` list that includes an entry of
- * `kind: model`. Tracks the active top-level key so that `- kind: model`
- * appearing under an unrelated list does not produce a false positive.
+ * declares a top-level `resources:` list containing `kind: model`. Matches
+ * both `- kind: model` and the multi-line continuation form, and limits
+ * scanning to the `resources:` block to avoid false positives.
  * @param {string} content
  * @returns {{ hasModelResource: boolean }}
  */
@@ -213,8 +213,13 @@ function parseAgentManifestYaml(content) {
             inResources = stripped.startsWith('resources:');
             continue;
         }
-        if (inResources && stripped.startsWith('- kind:')) {
-            const value = stripped.substring('- kind:'.length).trim();
+        if (!inResources) {
+            continue;
+        }
+        // Strip optional `- ` so the inline and continuation forms both match.
+        const withoutDash = stripped.replace(/^-\s+/, '');
+        if (withoutDash.startsWith('kind:')) {
+            const value = withoutDash.substring('kind:'.length).trim().replace(/^["']|["']$/g, '');
             if (value === 'model') {
                 return { hasModelResource: true };
             }
@@ -390,10 +395,7 @@ async function scanTemplates(commitSha) {
 
                 for (const templateDir of templateDirs) {
                     const templatePath = `${protocolPath}/${templateDir}`;
-                    const [agentInfo, manifestInfo] = await Promise.all([
-                        fetchAgentYaml(templatePath, commitSha),
-                        fetchAgentManifestYaml(templatePath, commitSha),
-                    ]);
+                    const agentInfo = await fetchAgentYaml(templatePath, commitSha);
 
                     /** @type {'responses' | 'invocations'} */
                     let protocol = /** @type {'responses' | 'invocations'} */ (protocolDir);
@@ -404,9 +406,13 @@ async function scanTemplates(commitSha) {
                             protocol = agentInfo.protocols[0];
                         }
                     }
-                    // Manifest-declared model resources also imply requiresModel.
-                    if (manifestInfo?.hasModelResource) {
-                        requiresModel = true;
+                    // Only consult agent.manifest.yaml when agent.yaml exists
+                    // and reported no model env; other cases already default to `true`.
+                    if (agentInfo && !agentInfo.hasModelEnv) {
+                        const manifestInfo = await fetchAgentManifestYaml(templatePath, commitSha);
+                        if (manifestInfo?.hasModelResource) {
+                            requiresModel = true;
+                        }
                     }
 
                     templates.push({
@@ -424,10 +430,7 @@ async function scanTemplates(commitSha) {
             // Templates directly under framework dir (e.g. csharp/agent-framework/hello-world)
             for (const templateDir of directTemplateDirs) {
                 const templatePath = `${frameworkPath}/${templateDir}`;
-                const [agentInfo, manifestInfo] = await Promise.all([
-                    fetchAgentYaml(templatePath, commitSha),
-                    fetchAgentManifestYaml(templatePath, commitSha),
-                ]);
+                const agentInfo = await fetchAgentYaml(templatePath, commitSha);
 
                 /** @type {'responses' | 'invocations'} */
                 let protocol = 'responses';
@@ -438,9 +441,12 @@ async function scanTemplates(commitSha) {
                         protocol = agentInfo.protocols[0];
                     }
                 }
-                // Manifest-declared model resources also imply requiresModel.
-                if (manifestInfo?.hasModelResource) {
-                    requiresModel = true;
+                // See comment in the protocolDirs loop above.
+                if (agentInfo && !agentInfo.hasModelEnv) {
+                    const manifestInfo = await fetchAgentManifestYaml(templatePath, commitSha);
+                    if (manifestInfo?.hasModelResource) {
+                        requiresModel = true;
+                    }
                 }
 
                 templates.push({

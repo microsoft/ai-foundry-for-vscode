@@ -196,6 +196,54 @@ async function fetchAgentYaml(samplePath, ref) {
     }
 }
 
+/**
+ * Minimal parser for agent.manifest.yaml — detects whether the manifest
+ * declares a top-level `resources:` list containing `kind: model`. Matches
+ * both `- kind: model` and the multi-line continuation form, and limits
+ * scanning to the `resources:` block to avoid false positives.
+ * @param {string} content
+ * @returns {{ hasModelResource: boolean }}
+ */
+function parseAgentManifestYaml(content) {
+    let inResources = false;
+    for (const rawLine of content.split('\n')) {
+        const stripped = rawLine.trim();
+        // Detect top-level key (column 0, e.g. `resources:`, `metadata:`).
+        if (/^[A-Za-z_][\w-]*:/.test(rawLine)) {
+            inResources = stripped.startsWith('resources:');
+            continue;
+        }
+        if (!inResources) {
+            continue;
+        }
+        // Strip optional `- ` so the inline and continuation forms both match.
+        const withoutDash = stripped.replace(/^-\s+/, '');
+        if (withoutDash.startsWith('kind:')) {
+            const value = withoutDash.substring('kind:'.length).trim().replace(/^["']|["']$/g, '');
+            if (value === 'model') {
+                return { hasModelResource: true };
+            }
+        }
+    }
+    return { hasModelResource: false };
+}
+
+/**
+ * Fetch and parse agent.manifest.yaml for a sample directory.
+ * @param {string} samplePath
+ * @param {string} ref
+ * @returns {Promise<{ hasModelResource: boolean } | null>}
+ */
+async function fetchAgentManifestYaml(samplePath, ref) {
+    const rawUrl = `https://raw.githubusercontent.com/microsoft-foundry/foundry-samples/${ref}/${samplePath}/agent.manifest.yaml`;
+    try {
+        const content = await fetchText(rawUrl);
+        return parseAgentManifestYaml(content);
+    } catch {
+        return null;
+    }
+}
+
 // Azure OpenAI configuration (from GitHub Secrets via env vars)
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || '';
 const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || '';
@@ -358,6 +406,14 @@ async function scanTemplates(commitSha) {
                             protocol = agentInfo.protocols[0];
                         }
                     }
+                    // Only consult agent.manifest.yaml when agent.yaml exists
+                    // and reported no model env; other cases already default to `true`.
+                    if (agentInfo && !agentInfo.hasModelEnv) {
+                        const manifestInfo = await fetchAgentManifestYaml(templatePath, commitSha);
+                        if (manifestInfo?.hasModelResource) {
+                            requiresModel = true;
+                        }
+                    }
 
                     templates.push({
                         language,
@@ -383,6 +439,13 @@ async function scanTemplates(commitSha) {
                     requiresModel = agentInfo.hasModelEnv;
                     if (agentInfo.protocols.length > 0) {
                         protocol = agentInfo.protocols[0];
+                    }
+                }
+                // See comment in the protocolDirs loop above.
+                if (agentInfo && !agentInfo.hasModelEnv) {
+                    const manifestInfo = await fetchAgentManifestYaml(templatePath, commitSha);
+                    if (manifestInfo?.hasModelResource) {
+                        requiresModel = true;
                     }
                 }
 

@@ -1,0 +1,210 @@
+name: Sync Agent Framework Samples
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      PR_LABEL_CANDIDATES: |
+        automated-pr
+        area:samples
+        area:dotnet
+        area:hosted-agent
+    strategy:
+      fail-fast: false
+      matrix:
+        base_branch:
+          - stable
+          - pre-release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+
+      - name: Stage sync script
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .github/scripts/sync_agent_framework_samples.py "$RUNNER_TEMP/sync_agent_framework_samples.py"
+
+      - name: Prepare target branch
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_branch="${{ matrix.base_branch }}"
+
+          if ! git ls-remote --exit-code --heads origin "$target_branch" >/dev/null 2>&1; then
+            echo "Branch $target_branch does not exist. Skipping."
+            echo "branch_exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch origin "$target_branch"
+          git checkout -B "$target_branch" "origin/$target_branch"
+
+          echo "branch_exists=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        if: steps.prepare.outputs.branch_exists == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Sync tracked sample files
+        if: steps.prepare.outputs.branch_exists == 'true'
+        env:
+          REPO_ROOT: ${{ github.workspace }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python "$RUNNER_TEMP/sync_agent_framework_samples.py"
+
+      - name: Detect sample changes
+        if: steps.prepare.outputs.branch_exists == 'true'
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          checked=$(find samples/hosted-agent/dotnet/agent samples/hosted-agent/dotnet/workflow \
+            -type f \( -name '*.cs' -o -name '*.csproj' \) | wc -l)
+          mapfile -t changed_files < <(
+            git diff --name-only -- \
+              samples/hosted-agent/dotnet/agent \
+              samples/hosted-agent/dotnet/workflow | sort
+          )
+          unchanged=$(( checked - ${#changed_files[@]} ))
+
+          echo "Checked $checked files, ${#changed_files[@]} changed, $unchanged unchanged."
+          if [[ ${#changed_files[@]} -gt 0 ]]; then
+            echo "Changed files:"
+            printf '  - %s\n' "${changed_files[@]}"
+          fi
+
+          {
+            echo "## Sample Sync Diff"
+            echo
+            echo "- Checked: $checked"
+            echo "- Changed: ${#changed_files[@]}"
+            echo "- Unchanged: $unchanged"
+            echo
+            if [[ ${#changed_files[@]} -gt 0 ]]; then
+              echo "### Changed files"
+              printf -- '- \`%s\`\n' "${changed_files[@]}"
+              echo
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ ${#changed_files[@]} -eq 0 ]]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git diff -- samples/hosted-agent/dotnet/agent samples/hosted-agent/dotnet/workflow
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve pull request labels
+        if: steps.prepare.outputs.branch_exists == 'true' && steps.diff.outputs.has_changes == 'true'
+        id: labels
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          existing_labels=$(gh api --paginate repos/${{ github.repository }}/labels --jq '.[].name')
+          matched_labels=""
+
+          while IFS= read -r candidate; do
+            if [[ -z "$candidate" ]]; then
+              continue
+            fi
+
+            if grep -Fqx "$candidate" <<< "$existing_labels"; then
+              matched_labels+="$candidate"
+              matched_labels+=$'\n'
+            fi
+          done <<< "$PR_LABEL_CANDIDATES"
+
+          {
+            echo "labels<<EOF"
+            printf '%s' "$matched_labels"
+            echo
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate PR branch name
+        if: steps.prepare.outputs.branch_exists == 'true' && steps.diff.outputs.has_changes == 'true'
+        id: branch
+        shell: bash
+        run: |
+          date_suffix=$(date -u +%Y%m%d)
+          echo "name=ci/sync-af_hosted-agent-samples-${{ matrix.base_branch }}-${date_suffix}" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft pull request
+        if: steps.prepare.outputs.branch_exists == 'true' && steps.diff.outputs.has_changes == 'true'
+        id: cpr
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: ${{ steps.branch.outputs.name }}
+          base: ${{ matrix.base_branch }}
+          delete-branch: true
+          draft: always-true
+          commit-message: |
+            ci: sync Agent Framework hosted-agent samples (${{ matrix.base_branch }})
+          title: "ci: sync Agent Framework hosted-agent samples (${{ matrix.base_branch }})"
+          body: |
+            ## Summary
+            This automated draft PR syncs the hosted-agent sample sources from `microsoft/agent-framework` `main` into `${{ matrix.base_branch }}`.
+
+            ## Upstream Sources
+            - `samples/hosted-agent/dotnet/agent` <- `dotnet/samples/05-end-to-end/HostedAgents/FoundrySingleAgent`
+            - `samples/hosted-agent/dotnet/workflow` <- `dotnet/samples/05-end-to-end/HostedAgents/FoundryMultiAgent`
+
+            ## Sync Rules
+            - Only `.cs` and `.csproj` files are compared and updated.
+            - Upstream concrete project names are converted back to the local `{{SafeProjectName}}` placeholder.
+            - Placeholder replacement also applies to file names when needed.
+            - The sync scope is limited to the local `agent` and `workflow` sample folders.
+
+            ## Reviewer Checks
+            - Confirm the diff only contains `.cs` and `.csproj` changes under the expected sample folders.
+            - Confirm any namespace, type name, or project file rename still maps correctly to `{{SafeProjectName}}`.
+            - Confirm package reference or SDK changes are acceptable for this repo's release branch.
+            - Confirm no repo-specific customization was unintentionally overwritten.
+
+            ## Labels
+            Preferred labels for this automation are:
+            - `automated-pr`
+
+            This workflow only applies labels that already exist in the repository.
+          labels: ${{ steps.labels.outputs.labels }}
+          add-paths: |
+            samples/hosted-agent/dotnet/agent/*.cs
+            samples/hosted-agent/dotnet/agent/*.csproj
+            samples/hosted-agent/dotnet/workflow/*.cs
+            samples/hosted-agent/dotnet/workflow/*.csproj
+
+      - name: Report PR result
+        if: steps.prepare.outputs.branch_exists == 'true' && steps.diff.outputs.has_changes == 'true'
+        shell: bash
+        run: |
+          echo "PR operation: ${{ steps.cpr.outputs.pull-request-operation }}"
+          echo "PR URL: ${{ steps.cpr.outputs.pull-request-url }}"

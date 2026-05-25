@@ -22,16 +22,16 @@
             "placeholder": "Choose the framework for your agent",
             "options": [
                 {
+                    "id": "copilot-sdk",
+                    "displayName": "Copilot SDK"
+                },
+                {
                     "id": "agent-framework",
                     "displayName": "Agent Framework"
                 },
                 {
                     "id": "bring-your-own",
                     "displayName": "Bring Your Own"
-                },
-                {
-                    "id": "copilot-sdk",
-                    "displayName": "Copilot SDK"
                 }
             ]
         },
@@ -215,7 +215,7 @@
             "displayName": "Multi-Turn Chat",
             "description": "Streams Copilot SDK session events with multi-turn conversation support.",
             "path": "samples/python/hosted-agents/bring-your-own/invocations/github-copilot",
-            "requiresModel": true
+            "requiresModel": false
         },
         {
             "language": "python",

@@ -1,7 +1,7 @@
 {
-    "commitSha": "0ce024a9ebf40f5dffe2b624043dece254a63438",
+    "commitSha": "6ef684d31806d22f30163aa78536f2b50af05d7c",
     "repo": "https://github.com/microsoft-foundry/foundry-samples/",
-    "generatedAt": "2026-05-21T08:04:45Z",
+    "generatedAt": "2026-05-25T08:45:57Z",
     "dimensions": {
         "language": {
             "title": "Select a Language",
@@ -113,9 +113,72 @@
             "language": "python",
             "framework": "agent-framework",
             "protocol": "responses",
+            "displayName": "File Management",
+            "description": "Agent that lists, reads, and interprets files using local and code tools.",
+            "path": "samples/python/hosted-agents/agent-framework/responses/06-files",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
+            "framework": "agent-framework",
+            "protocol": "responses",
+            "displayName": "File-Based Skills",
+            "description": "Agent that discovers and runs local file-based skills for travel guide creation.",
+            "path": "samples/python/hosted-agents/agent-framework/responses/07-skills",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
+            "framework": "agent-framework",
+            "protocol": "responses",
+            "displayName": "Observability",
+            "description": "Instrumented agent with diagnostics and telemetry for execution monitoring.",
+            "path": "samples/python/hosted-agents/agent-framework/responses/08-observability",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
+            "framework": "agent-framework",
+            "protocol": "responses",
             "displayName": "Customer Support",
             "description": "Declarative workflow for multi-turn customer support triage and routing.",
-            "path": "samples/python/hosted-agents/agent-framework/responses/06-declarative-customer-support",
+            "path": "samples/python/hosted-agents/agent-framework/responses/09-declarative-customer-support",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
+            "framework": "agent-framework",
+            "protocol": "responses",
+            "displayName": "Azure Data Operations",
+            "description": "Performs data-plane actions on Blob Storage and Service Bus using Entra identity.",
+            "path": "samples/python/hosted-agents/agent-framework/responses/10-downstream-azure",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
+            "framework": "agent-framework",
+            "protocol": "responses",
+            "displayName": "Search-Augmented RAG",
+            "description": "Retrieves product documentation from Azure AI Search to ground and cite answers.",
+            "path": "samples/python/hosted-agents/agent-framework/responses/11-azure-search-rag",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
+            "framework": "agent-framework",
+            "protocol": "responses",
+            "displayName": "Foundry Skills",
+            "description": "Loads behavioral guidelines from Foundry Skills at startup.",
+            "path": "samples/python/hosted-agents/agent-framework/responses/12-foundry-skills",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
+            "framework": "agent-framework",
+            "protocol": "responses",
+            "displayName": "Persistent Memory",
+            "description": "Agent remembers user facts across sessions using semantic memory storage.",
+            "path": "samples/python/hosted-agents/agent-framework/responses/13-foundry-memory",
             "requiresModel": true
         },
         {
@@ -129,12 +192,30 @@
         },
         {
             "language": "python",
+            "framework": "bring-your-own",
+            "protocol": "invocations",
+            "displayName": "Streaming Invocations",
+            "description": "Streams assistant responses for plain text input via POST requests.",
+            "path": "samples/python/hosted-agents/bring-your-own/invocations/claude-agent-sdk",
+            "requiresModel": false
+        },
+        {
+            "language": "python",
+            "framework": "bring-your-own",
+            "protocol": "invocations",
+            "displayName": "Event-Driven Summarization",
+            "description": "Summarizes uploaded blobs and writes results to a separate container on event trigger.",
+            "path": "samples/python/hosted-agents/bring-your-own/invocations/event-grid-trigger",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
             "framework": "copilot-sdk",
             "protocol": "invocations",
             "displayName": "Multi-Turn Chat",
             "description": "Streams Copilot SDK session events with multi-turn conversation support.",
             "path": "samples/python/hosted-agents/bring-your-own/invocations/github-copilot",
-            "requiresModel": false
+            "requiresModel": true
         },
         {
             "language": "python",
@@ -221,6 +302,15 @@
             "language": "python",
             "framework": "bring-your-own",
             "protocol": "responses",
+            "displayName": "User Identity Tools",
+            "description": "Connects to mail, calendar, and GitHub tools for user-identity scenarios.",
+            "path": "samples/python/hosted-agents/bring-your-own/responses/langgraph-toolbox-user-identity",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
+            "framework": "bring-your-own",
+            "protocol": "responses",
             "displayName": "Toolbox Integration",
             "description": "Connects to a toolbox and serves responses using loaded tools.",
             "path": "samples/python/hosted-agents/bring-your-own/responses/langgraph-toolbox",
@@ -233,6 +323,51 @@
             "displayName": "Note-Taking",
             "description": "Saves and retrieves notes with per-session persistence and streaming responses.",
             "path": "samples/python/hosted-agents/bring-your-own/responses/notetaking-agent",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
+            "framework": "bring-your-own",
+            "protocol": "responses",
+            "displayName": "Streaming Responses",
+            "description": "Streams text responses from a Foundry-backed model using the Responses protocol.",
+            "path": "samples/python/hosted-agents/bring-your-own/responses/openai-agents-sdk",
+            "requiresModel": true
+        },
+        {
+            "language": "python",
+            "framework": "bring-your-own",
+            "protocol": "responses",
+            "displayName": "Voicelive",
+            "description": "",
+            "path": "samples/python/hosted-agents/bring-your-own/voicelive",
+            "requiresModel": true
+        },
+        {
+            "language": "csharp",
+            "framework": "agent-framework",
+            "protocol": "responses",
+            "displayName": "Retrieval Augmented Generation",
+            "description": "Answers are grounded in a knowledge base using Azure AI Search.",
+            "path": "samples/csharp/hosted-agents/agent-framework/azure-search-rag",
+            "requiresModel": true
+        },
+        {
+            "language": "csharp",
+            "framework": "agent-framework",
+            "protocol": "responses",
+            "displayName": "File Tools",
+            "description": "Answers questions using bundled and session-uploaded files as knowledge sources.",
+            "path": "samples/csharp/hosted-agents/agent-framework/file-tools",
+            "requiresModel": true
+        },
+        {
+            "language": "csharp",
+            "framework": "agent-framework",
+            "protocol": "responses",
+            "displayName": "Persistent Memory RAG",
+            "description": "Answers are grounded in user-specific memories that persist across sessions.",
+            "path": "samples/csharp/hosted-agents/agent-framework/foundry-memory-rag",
             "requiresModel": true
         },
         {

@@ -48,10 +48,12 @@ const DIMENSION_DEFAULTS = {
     framework: {
         title: 'Select a Framework',
         placeholder: 'Choose the framework for your agent',
+        // Insertion order here drives the option order in the generated catalog
+        // (see buildDimensions). Keep the most actively promoted framework first.
         options: {
+            'copilot-sdk': 'Copilot SDK',
             'agent-framework': 'Agent Framework',
             'bring-your-own': 'Bring Your Own',
-            'copilot-sdk': 'Copilot SDK',
         },
     },
     protocol: {
@@ -513,6 +515,12 @@ async function scanTemplates(commitSha) {
 
 /**
  * Build the dimensions section from discovered templates and defaults.
+ * Option order follows the insertion order of `DIMENSION_DEFAULTS[dim].options`
+ * so we have UX control (e.g. promote `copilot-sdk` ahead of
+ * `agent-framework`). Any id seen in the scanned templates but not declared in
+ * the defaults is appended at the end in alphabetical order, so a new
+ * framework added upstream does not break the build — just shows up last.
+ *
  * @param {Array<{language: string, framework: string, protocol: string}>} templates
  */
 function buildDimensions(templates) {
@@ -521,8 +529,13 @@ function buildDimensions(templates) {
 
     for (const dimKey of /** @type {const} */ (['language', 'framework', 'protocol'])) {
         const defaults = DIMENSION_DEFAULTS[dimKey];
-        const seenIds = [...new Set(templates.map((t) => t[dimKey]))].sort();
-        const options = seenIds.map((id) => ({
+        const seenIds = new Set(templates.map((t) => t[dimKey]));
+        const declaredOrder = Object.keys(defaults.options);
+        const orderedIds = [
+            ...declaredOrder.filter((id) => seenIds.has(id)),
+            ...[...seenIds].filter((id) => !declaredOrder.includes(id)).sort(),
+        ];
+        const options = orderedIds.map((id) => ({
             id,
             displayName: defaults.options[id] || id,
         }));

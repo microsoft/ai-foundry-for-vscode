@@ -17,7 +17,7 @@
  *   SAMPLES_REPO_URL    Source repo URL (defaults to https://github.com/microsoft-foundry/foundry-samples/).
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -71,6 +71,24 @@ const TEMPLATE_SELECTION = {
 
 // Path segments must be alphanumeric, hyphens, underscores, or dots
 const SAFE_PATH_SEGMENT = /^[a-zA-Z0-9._-]+$/;
+
+/**
+ * Collected anomaly messages surfaced in CI step summary so reviewers do not
+ * silently merge a catalog with missing/derived data. Always populated, even
+ * when running locally without a step-summary file.
+ * @type {string[]}
+ */
+const warnings = [];
+
+/**
+ * Record a warning that should appear in the CI step summary, and mirror it
+ * to stderr for live log visibility.
+ * @param {string} message
+ */
+function warn(message) {
+    warnings.push(message);
+    console.warn(`WARN: ${message}`);
+}
 
 /**
  * @param {string} url
@@ -135,23 +153,85 @@ function parseCommitShaArg() {
 }
 
 /**
- * List subdirectory names under a given API path.
- * @param {string} apiPath
+ * Fetch the full recursive git tree for a ref. One API call covers the entire
+ * `samples/` hierarchy, which is much cheaper (and more accurate) than walking
+ * the `/contents/` endpoint level-by-level — and it lets us discover samples
+ * at arbitrary nesting depths (e.g. `bring-your-own/voicelive/<template>`)
+ * without hard-coding the layout.
+ *
  * @param {string} ref
- * @returns {Promise<string[]>}
+ * @returns {Promise<{tree: Array<{path: string, type: string}>, truncated: boolean}>}
  */
-async function listDirs(apiPath, ref) {
-    try {
-        const items = await fetchJson(`${SAMPLES_REPO_API}/contents/${apiPath}?ref=${ref}`);
-        if (!Array.isArray(items)) {
-            return [];
+async function fetchRepoTree(ref) {
+    const data = await fetchJson(`${SAMPLES_REPO_API}/git/trees/${ref}?recursive=1`);
+    const tree = Array.isArray(data?.tree) ? data.tree : [];
+    return { tree, truncated: Boolean(data?.truncated) };
+}
+
+/**
+ * Find sample template directories under a `hosted-agents/<framework>/` prefix.
+ * A template is identified by the presence of an `agent.yaml`. When nested
+ * agent.yaml files exist (e.g. a sub-agent declared inside a parent sample),
+ * only the OUTERMOST one is treated as a catalog template — the inner files
+ * are part of the parent sample. Hidden directories (segments beginning with
+ * `.`, e.g. `.claude/skills`) are skipped, as are segments that fail the
+ * `SAFE_PATH_SEGMENT` check.
+ *
+ * @param {Array<{path: string, type: string}>} tree
+ * @param {string} prefix Path prefix ending in `/`, e.g. `samples/python/hosted-agents/agent-framework/`.
+ * @returns {string[]} Repo-relative template directory paths, outermost only.
+ */
+function findTemplateDirsUnder(tree, prefix) {
+    const candidates = tree
+        .filter((entry) => entry.type === 'blob' && entry.path.startsWith(prefix) && entry.path.endsWith('/agent.yaml'))
+        .map((entry) => entry.path.slice(0, -'/agent.yaml'.length))
+        .filter((dir) => {
+            const rel = dir.slice(prefix.length);
+            if (!rel) {
+                return false;
+            }
+            return rel.split('/').every((seg) => isSafePathSegment(seg));
+        })
+        // Sort by length so outermost templates are visited first.
+        .sort((a, b) => a.length - b.length);
+
+    /** @type {string[]} */
+    const outermost = [];
+    for (const dir of candidates) {
+        if (!outermost.some((existing) => dir.startsWith(`${existing}/`))) {
+            outermost.push(dir);
         }
-        return items
-            .filter((item) => item.type === 'dir' && isSafePathSegment(String(item.name)))
-            .map((item) => String(item.name));
-    } catch {
-        return [];
     }
+    return outermost;
+}
+
+/**
+ * Infer protocol when `agent.yaml` does not declare one explicitly. Looks for
+ * a `responses` or `invocations` segment in the path, then for the substring
+ * in the leaf directory name (common for samples like
+ * `hello-world-invocations-voicelive`). Falls back to `responses` and emits a
+ * warning so the catalog reviewer can verify the choice.
+ *
+ * @param {string} templatePath
+ * @returns {'responses' | 'invocations'}
+ */
+function inferProtocolFromPath(templatePath) {
+    const segments = templatePath.split('/');
+    if (segments.includes('responses')) {
+        return 'responses';
+    }
+    if (segments.includes('invocations')) {
+        return 'invocations';
+    }
+    const leaf = segments[segments.length - 1].toLowerCase();
+    if (leaf.includes('invocations')) {
+        return 'invocations';
+    }
+    if (leaf.includes('responses')) {
+        return 'responses';
+    }
+    warn(`Could not infer protocol for "${templatePath}"; defaulting to "responses". Add a "- protocol:" entry to agent.yaml or a sample-overrides.json entry to silence this.`);
+    return 'responses';
 }
 
 /**
@@ -325,7 +405,7 @@ ${readmeContent.substring(0, 2000)}`;
         });
 
         if (!response.ok) {
-            console.warn(`LLM API returned ${response.status} for ${samplePath}`);
+            warn(`LLM API returned ${response.status} for ${samplePath}; will fall back to directory-name displayName and leave description empty.`);
             return null;
         }
 
@@ -348,7 +428,7 @@ ${readmeContent.substring(0, 2000)}`;
 
         return { displayName, description };
     } catch (/** @type {any} */ err) {
-        console.warn(`LLM call failed for ${samplePath}: ${err.message}`);
+        warn(`LLM call failed for ${samplePath}: ${err.message}`);
         return null;
     }
 }
@@ -368,7 +448,14 @@ function displayNameFromPath(samplePath) {
 }
 
 /**
- * Scan the foundry-samples repo and build the flat template list.
+ * Scan the foundry-samples repo and build the flat template list. Uses one
+ * recursive git-tree call to enumerate every `agent.yaml` under each
+ * `<language>/hosted-agents/<framework>/` prefix, regardless of intermediate
+ * directories. This supports both the canonical layout
+ * (`<framework>/<protocol>/<template>`), the flat layout
+ * (`<framework>/<template>`), and category-grouped layouts such as
+ * `bring-your-own/voicelive/hello-world-invocations-voicelive`.
+ *
  * @param {string} commitSha
  * @returns {Promise<Array<{language: string, framework: string, protocol: string, displayName: string, description: string, path: string, requiresModel: boolean}>>}
  */
@@ -376,73 +463,32 @@ async function scanTemplates(commitSha) {
     /** @type {Array<{language: string, framework: string, protocol: string, displayName: string, description: string, path: string, requiresModel: boolean}>} */
     const templates = [];
 
+    const { tree, truncated } = await fetchRepoTree(commitSha);
+    if (truncated) {
+        warn(`GitHub git-tree API returned truncated=true for ${commitSha}; some samples may be missing from the catalog. Consider pinning to a smaller subtree or re-running.`);
+    }
+
     for (const language of LANGUAGES) {
-        const hostedRoot = `samples/${language}/hosted-agents`;
-
         for (const framework of FRAMEWORKS) {
-            const frameworkPath = `${hostedRoot}/${framework}`;
-            const subdirs = await listDirs(frameworkPath, commitSha);
+            const prefix = `samples/${language}/hosted-agents/${framework}/`;
+            const templateDirs = findTemplateDirsUnder(tree, prefix);
 
-            const protocolDirs = subdirs.filter((d) => d === 'responses' || d === 'invocations');
-            const directTemplateDirs = subdirs.filter(
-                (d) => d !== 'responses' && d !== 'invocations' && d !== 'README.md'
-            );
-
-            // Templates grouped by protocol subdirectories
-            for (const protocolDir of protocolDirs) {
-                const protocolPath = `${frameworkPath}/${protocolDir}`;
-                const templateDirs = await listDirs(protocolPath, commitSha);
-
-                for (const templateDir of templateDirs) {
-                    const templatePath = `${protocolPath}/${templateDir}`;
-                    const agentInfo = await fetchAgentYaml(templatePath, commitSha);
-
-                    /** @type {'responses' | 'invocations'} */
-                    let protocol = /** @type {'responses' | 'invocations'} */ (protocolDir);
-                    let requiresModel = true;
-                    if (agentInfo) {
-                        requiresModel = agentInfo.hasModelEnv;
-                        if (agentInfo.protocols.length > 0) {
-                            protocol = agentInfo.protocols[0];
-                        }
-                    }
-                    // Only consult agent.manifest.yaml when agent.yaml exists
-                    // and reported no model env; other cases already default to `true`.
-                    if (agentInfo && !agentInfo.hasModelEnv) {
-                        const manifestInfo = await fetchAgentManifestYaml(templatePath, commitSha);
-                        if (manifestInfo?.hasModelResource) {
-                            requiresModel = true;
-                        }
-                    }
-
-                    templates.push({
-                        language,
-                        framework,
-                        protocol,
-                        displayName: '',
-                        description: '',
-                        path: templatePath,
-                        requiresModel,
-                    });
-                }
-            }
-
-            // Templates directly under framework dir (e.g. csharp/agent-framework/hello-world)
-            for (const templateDir of directTemplateDirs) {
-                const templatePath = `${frameworkPath}/${templateDir}`;
+            for (const templatePath of templateDirs) {
                 const agentInfo = await fetchAgentYaml(templatePath, commitSha);
+                if (!agentInfo) {
+                    warn(`Could not fetch or parse agent.yaml for "${templatePath}"; skipping this template.`);
+                    continue;
+                }
 
                 /** @type {'responses' | 'invocations'} */
-                let protocol = 'responses';
-                let requiresModel = true;
-                if (agentInfo) {
-                    requiresModel = agentInfo.hasModelEnv;
-                    if (agentInfo.protocols.length > 0) {
-                        protocol = agentInfo.protocols[0];
-                    }
-                }
-                // See comment in the protocolDirs loop above.
-                if (agentInfo && !agentInfo.hasModelEnv) {
+                const protocol = agentInfo.protocols.length > 0
+                    ? agentInfo.protocols[0]
+                    : inferProtocolFromPath(templatePath);
+
+                let requiresModel = agentInfo.hasModelEnv;
+                // Only consult agent.manifest.yaml when agent.yaml reported no
+                // model env; otherwise we already default to `true`.
+                if (!requiresModel) {
                     const manifestInfo = await fetchAgentManifestYaml(templatePath, commitSha);
                     if (manifestInfo?.hasModelResource) {
                         requiresModel = true;
@@ -522,7 +568,7 @@ function mergeExistingDisplayFields(templates) {
             }
         }
     } catch (/** @type {any} */ err) {
-        console.warn(`Warning: could not read existing catalog: ${err.message}`);
+        warn(`Could not read existing catalog at ${OUTPUT_PATH}: ${err.message}. Existing displayName/description values were NOT preserved this run.`);
     }
 }
 
@@ -547,7 +593,7 @@ function loadOverrides() {
             }
         }
     } catch (/** @type {any} */ err) {
-        console.warn(`Warning: could not read sample-overrides.json: ${err.message}`);
+        warn(`Could not read sample-overrides.json: ${err.message}`);
     }
     return byPath;
 }
@@ -577,7 +623,7 @@ function applyOverrides(templates, overrides) {
     }
     for (const path of overrides.keys()) {
         if (!seenPaths.has(path)) {
-            console.warn(`Warning: override for "${path}" did not match any scanned template; check sample-overrides.json.`);
+            warn(`Override for "${path}" did not match any scanned template; check sample-overrides.json (upstream may have moved or renamed the sample).`);
         }
     }
 }
@@ -622,6 +668,23 @@ async function autoFillDisplayFields(templates, commitSha) {
             template.displayName = displayNameFromPath(template.path);
         }
     }
+
+    // Flag any template still missing fields after all fallbacks ran. displayName
+    // is always filled by the directory-name fallback above, so this is mostly
+    // about description — but check both for completeness in case the fallback
+    // ever regresses.
+    for (const template of templates) {
+        const missing = [];
+        if (!template.displayName) {
+            missing.push('displayName');
+        }
+        if (!template.description) {
+            missing.push('description');
+        }
+        if (missing.length > 0) {
+            warn(`Template "${template.path}" is missing: ${missing.join(', ')}. PM should fill these before merge.`);
+        }
+    }
 }
 
 async function main() {
@@ -660,6 +723,56 @@ async function main() {
     writeFileSync(OUTPUT_PATH, JSON.stringify(catalog, null, 4) + '\n', 'utf-8');
 
     console.log(`Wrote ${OUTPUT_PATH}`);
+
+    writeSummary(templates.length);
+}
+
+/**
+ * Append a Markdown report to `$GITHUB_STEP_SUMMARY` (when running in CI) that
+ * surfaces the warnings collected during this run. Reviewers otherwise have
+ * to scroll through raw job logs to notice anomalies like templates missing
+ * descriptions or unmatched overrides. Locally (no env var) this is a no-op.
+ *
+ * @param {number} templateCount
+ */
+function writeSummary(templateCount) {
+    const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+    if (!summaryPath) {
+        if (warnings.length > 0) {
+            console.warn(`\nCatalog generation produced ${warnings.length} warning(s) (see WARN lines above).`);
+        }
+        return;
+    }
+
+    const lines = [
+        '',
+        '## Sample Catalog Generation',
+        '',
+        `- Templates discovered: **${templateCount}**`,
+        `- Warnings emitted: **${warnings.length}**`,
+        '',
+    ];
+
+    if (warnings.length > 0) {
+        lines.push('### ⚠ Anomalies');
+        lines.push('');
+        lines.push('These were logged during generation and may need human attention before merging:');
+        lines.push('');
+        for (const message of warnings) {
+            // Escape pipes so the message renders cleanly even if used inside a future table.
+            lines.push(`- ${message.replace(/\|/g, '\\|')}`);
+        }
+        lines.push('');
+    } else {
+        lines.push('No anomalies detected. ✅');
+        lines.push('');
+    }
+
+    try {
+        appendFileSync(summaryPath, lines.join('\n'), 'utf-8');
+    } catch (/** @type {any} */ err) {
+        console.warn(`Could not append to GITHUB_STEP_SUMMARY: ${err.message}`);
+    }
 }
 
 main().catch((err) => {

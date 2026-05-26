@@ -158,6 +158,22 @@ jobs:
       - name: Report PR result
         if: steps.diff.outputs.has_changes == 'true'
         shell: bash
+        env:
+          PR_OPERATION: ${{ steps.cpr.outputs.pull-request-operation }}
+          PR_URL: ${{ steps.cpr.outputs.pull-request-url }}
+          PR_NUMBER: ${{ steps.cpr.outputs.pull-request-number }}
         run: |
-          echo "PR operation: ${{ steps.cpr.outputs.pull-request-operation }}"
-          echo "PR URL: ${{ steps.cpr.outputs.pull-request-url }}"
+          echo "PR operation: $PR_OPERATION"
+          echo "PR URL: $PR_URL"
+
+          {
+            echo
+            echo "## Pull Request"
+            echo
+            if [[ -n "$PR_URL" ]]; then
+              echo "- Operation: \`$PR_OPERATION\`"
+              echo "- PR: [#${PR_NUMBER:-?}]($PR_URL)"
+            else
+              echo "- No pull request was created or updated (peter-evans/create-pull-request returned no URL)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

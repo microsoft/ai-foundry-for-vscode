@@ -233,7 +233,7 @@
             "displayName": "GitHub Copilot",
             "description": "Agent streams Copilot session events with multi-turn support and pirate-themed jokes.",
             "path": "samples/python/hosted-agents/bring-your-own/invocations/github-copilot",
-            "requiresModel": true
+            "requiresModel": false
         },
         {
             "language": "python",

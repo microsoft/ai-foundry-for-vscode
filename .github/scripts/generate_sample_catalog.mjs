@@ -200,18 +200,22 @@ function findTemplateDirsUnder(tree, prefix) {
                 return false;
             }
             return rel.split('/').every((seg) => isSafePathSegment(seg));
-        })
-        // Sort by length so outermost templates are visited first.
-        .sort((a, b) => a.length - b.length);
+        });
 
+    // Sort by length so outermost templates are detected first; nested
+    // agent.yaml files (e.g. a sub-agent inside a parent sample) get filtered
+    // out by the startsWith check below.
+    const byLength = [...candidates].sort((a, b) => a.length - b.length);
     /** @type {string[]} */
     const outermost = [];
-    for (const dir of candidates) {
+    for (const dir of byLength) {
         if (!outermost.some((existing) => dir.startsWith(`${existing}/`))) {
             outermost.push(dir);
         }
     }
-    return outermost;
+    // Final ordering is lexicographic on the full path so upstream's `NN-`
+    // numeric prefixes drive the picker order (e.g. 01-basic before 03-mcp).
+    return outermost.sort();
 }
 
 /**

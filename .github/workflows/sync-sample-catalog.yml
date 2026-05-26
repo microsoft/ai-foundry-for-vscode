@@ -149,7 +149,7 @@ jobs:
 
             ## What changed
             - New templates added or removed based on the upstream repo structure.
-            - `commitSha` updated to the latest commit on `main`.
+            - `commitSha` pinned to the upstream commit supplied via the `commit_sha` workflow input.
             - `requiresModel` and `protocol` values re-derived from each sample's `agent.yaml`.
             - `displayName` derived from each template's folder name; `description` LLM-generated when empty.
             - PM-edited `displayName` and `description` values are preserved from the previous catalog.

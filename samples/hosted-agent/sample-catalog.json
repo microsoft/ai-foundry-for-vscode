@@ -59,7 +59,7 @@
             "language": "python",
             "framework": "agent-framework",
             "protocol": "responses",
-            "displayName": "Mcp",
+            "displayName": "MCP",
             "description": "Agent that dynamically discovers and invokes tools from a remote GitHub MCP server.",
             "path": "samples/python/hosted-agents/agent-framework/responses/03-mcp",
             "requiresModel": true
@@ -167,7 +167,7 @@
             "language": "python",
             "framework": "agent-framework",
             "protocol": "responses",
-            "displayName": "Azure Search Rag",
+            "displayName": "Azure Search RAG",
             "description": "Answers questions using product documentation and cites sources from a search index.",
             "path": "samples/python/hosted-agents/agent-framework/responses/11-azure-search-rag",
             "requiresModel": true
@@ -185,7 +185,7 @@
             "language": "python",
             "framework": "bring-your-own",
             "protocol": "invocations",
-            "displayName": "Ag Ui",
+            "displayName": "AG UI",
             "description": "Agent that streams AG-UI events in response to user input via HTTP POST.",
             "path": "samples/python/hosted-agents/bring-your-own/invocations/ag-ui",
             "requiresModel": true
@@ -230,7 +230,7 @@
             "language": "python",
             "framework": "copilot-sdk",
             "protocol": "invocations",
-            "displayName": "Github Copilot",
+            "displayName": "GitHub Copilot",
             "description": "Agent streams Copilot session events with multi-turn support and pirate-themed jokes.",
             "path": "samples/python/hosted-agents/bring-your-own/invocations/github-copilot",
             "requiresModel": true
@@ -275,7 +275,7 @@
             "language": "python",
             "framework": "bring-your-own",
             "protocol": "responses",
-            "displayName": "Openai Agents Sdk",
+            "displayName": "OpenAI Agents SDK",
             "description": "Minimal agent that streams text responses from a Foundry-backed model.",
             "path": "samples/python/hosted-agents/bring-your-own/responses/openai-agents-sdk",
             "requiresModel": true
@@ -284,7 +284,7 @@
             "language": "python",
             "framework": "bring-your-own",
             "protocol": "invocations",
-            "displayName": "Claude Agent Sdk",
+            "displayName": "Claude Agent SDK",
             "description": "Streams assistant responses for plain text queries with error handling.",
             "path": "samples/python/hosted-agents/bring-your-own/invocations/claude-agent-sdk",
             "requiresModel": false
@@ -347,7 +347,7 @@
             "language": "csharp",
             "framework": "agent-framework",
             "protocol": "responses",
-            "displayName": "Mcp Tools",
+            "displayName": "MCP Tools",
             "description": "Agent answers questions by searching documentation using integrated tool providers.",
             "path": "samples/csharp/hosted-agents/agent-framework/mcp-tools",
             "requiresModel": true
@@ -401,7 +401,7 @@
             "language": "csharp",
             "framework": "agent-framework",
             "protocol": "responses",
-            "displayName": "Text Search Rag",
+            "displayName": "Text Search RAG",
             "description": "Support agent that answers questions using external knowledge from support documents.",
             "path": "samples/csharp/hosted-agents/agent-framework/text-search-rag",
             "requiresModel": true
@@ -410,7 +410,7 @@
             "language": "csharp",
             "framework": "agent-framework",
             "protocol": "responses",
-            "displayName": "Azure Search Rag",
+            "displayName": "Azure Search RAG",
             "description": "Support agent answers questions using a keyword-indexed knowledge base for grounding.",
             "path": "samples/csharp/hosted-agents/agent-framework/azure-search-rag",
             "requiresModel": true
@@ -419,7 +419,7 @@
             "language": "csharp",
             "framework": "agent-framework",
             "protocol": "responses",
-            "displayName": "Foundry Memory Rag",
+            "displayName": "Foundry Memory RAG",
             "description": "Personal coach agent that remembers user preferences and goals across sessions.",
             "path": "samples/csharp/hosted-agents/agent-framework/foundry-memory-rag",
             "requiresModel": true

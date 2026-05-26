@@ -132,12 +132,17 @@ async function fetchText(url) {
 }
 
 /**
- * Validate that a path segment is safe (no traversal, no special chars).
+ * Validate that a path segment is safe: no traversal, no special chars, no
+ * leading-dot directories (e.g. `.claude`, `.github`) which are tooling
+ * metadata, not sample templates.
  * @param {string} segment
  * @returns {boolean}
  */
 function isSafePathSegment(segment) {
-    return SAFE_PATH_SEGMENT.test(segment) && segment !== '..' && segment !== '.';
+    if (segment === '.' || segment === '..' || segment.startsWith('.')) {
+        return false;
+    }
+    return SAFE_PATH_SEGMENT.test(segment);
 }
 
 /**
@@ -438,10 +443,36 @@ ${readmeContent.substring(0, 2000)}`;
 }
 
 /**
+ * Brand and acronym casing overrides applied during displayName derivation.
+ * Keys are lower-case tokens; values are the canonical user-facing rendering.
+ * Add entries here when a new acronym or brand appears in a sample folder
+ * name so the template picker doesn't show "Github" / "Mcp" / "Sdk".
+ * @type {Record<string, string>}
+ */
+const DISPLAY_NAME_TOKEN_CASING = {
+    ag: 'AG',
+    ai: 'AI',
+    api: 'API',
+    aws: 'AWS',
+    cli: 'CLI',
+    gcp: 'GCP',
+    github: 'GitHub',
+    llm: 'LLM',
+    mcp: 'MCP',
+    openai: 'OpenAI',
+    rag: 'RAG',
+    sdk: 'SDK',
+    sso: 'SSO',
+    ui: 'UI',
+};
+
+/**
  * Derive a displayName from the template's directory name. Strips a leading
  * numeric ordering prefix (`09-`, `12_`) so upstream reorderings don't bleed
  * into the picker, then converts dash/underscore tokens into Title Case
- * words:  `09-declarative-customer-support` -> `Declarative Customer Support`.
+ * words and applies `DISPLAY_NAME_TOKEN_CASING` for known acronyms/brands:
+ * `09-declarative-customer-support` -> `Declarative Customer Support`,
+ * `azure-search-rag` -> `Azure Search RAG`.
  *
  * @param {string} samplePath
  * @returns {string}
@@ -452,7 +483,7 @@ function displayNameFromPath(samplePath) {
         .replace(/^\d+[-_]/, '')
         .split(/[-_]/)
         .filter((w) => w.length > 0)
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .map((w) => DISPLAY_NAME_TOKEN_CASING[w.toLowerCase()] ?? (w.charAt(0).toUpperCase() + w.slice(1)))
         .join(' ');
 }
 

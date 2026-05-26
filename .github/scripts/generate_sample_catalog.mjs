@@ -576,6 +576,7 @@ function mergeExistingDisplayFields(templates) {
             }
         }
 
+        const scannedPaths = new Set(templates.map((t) => t.path));
         for (const template of templates) {
             const prev = existingByPath.get(template.path);
             if (prev) {
@@ -586,6 +587,17 @@ function mergeExistingDisplayFields(templates) {
                     template.description = prev.description;
                 }
             }
+        }
+        // Surface paths that exist in the prior catalog but were not produced
+        // by this scan — upstream likely renamed or removed the sample, and any
+        // PM-edited displayName/description on it has been dropped.
+        for (const [path, prev] of existingByPath) {
+            if (scannedPaths.has(path)) {
+                continue;
+            }
+            const hadEdits = Boolean(prev.displayName || prev.description);
+            const suffix = hadEdits ? ' Previously-edited displayName/description were dropped.' : '';
+            warn(`Template "${path}" was in the previous catalog but no longer matches any scanned sample (upstream may have renamed or removed it).${suffix}`);
         }
     } catch (/** @type {any} */ err) {
         warn(`Could not read existing catalog at ${OUTPUT_PATH}: ${err.message}. Existing displayName/description values were NOT preserved this run.`);

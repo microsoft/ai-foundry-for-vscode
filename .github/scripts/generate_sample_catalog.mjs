@@ -347,10 +347,15 @@ async function fetchReadme(samplePath, ref) {
 }
 
 /**
- * Call Azure OpenAI to generate displayName and description from README content.
+ * Call Azure OpenAI to generate a description from README content. We
+ * intentionally do NOT ask the LLM for displayName — the folder name (with
+ * numeric-prefix stripped, dashes turned into spaces, and Title Case)
+ * produces more consistent results across the catalog and is easier for PMs
+ * to predict at review time.
+ *
  * @param {string} readmeContent
  * @param {string} samplePath
- * @returns {Promise<{ displayName: string, description: string } | null>}
+ * @returns {Promise<{ description: string } | null>}
  */
 async function generateWithLLM(readmeContent, samplePath) {
     if (!AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_API_KEY) {
@@ -359,28 +364,23 @@ async function generateWithLLM(readmeContent, samplePath) {
 
     const apiUrl = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version=2024-08-01-preview`;
 
-    const systemPrompt = `You generate metadata for a VS Code template picker.
-The user has already selected language, framework, and protocol before seeing these items.
+    const systemPrompt = `You generate one-sentence descriptions for a VS Code template picker.
+The user has already selected language, framework, and protocol before seeing these items, so the description must NOT repeat those choices.
 
-Rules for displayName:
-- 1-3 words, max 4 words
-- Describe the core capability only (e.g. "Hello World", "Multi-Turn Chat", "Local Tools", "MCP Tools", "Note-Taking")
-- Do NOT include: language names, protocol names, framework names, "Agent", "Hosted", "Sample", "Demo"
-- Use Title Case
-
-Rules for description:
+Rules:
 - One sentence, max 100 characters
 - Plain text, no markdown
-- Describe what the sample does, not how
+- Describe what the sample does, not how it is implemented
+- Do NOT include language names, protocol names, framework names, or words like "Sample" / "Demo"
 
 Examples:
-  {"displayName": "Hello World", "description": "Minimal agent that echoes a response from a Foundry model."}
-  {"displayName": "Multi-Turn Chat", "description": "Conversational agent with multi-turn session history."}
-  {"displayName": "Local Tools", "description": "Agent with local function tools for hotel search."}
-  {"displayName": "MCP Tools", "description": "Agent that discovers and invokes tools from a remote MCP server."}
-  {"displayName": "Note-Taking", "description": "Agent that saves and retrieves notes using function calling."}
+  {"description": "Minimal agent that echoes a response from a Foundry model."}
+  {"description": "Conversational agent with multi-turn session history."}
+  {"description": "Agent with local function tools for hotel search."}
+  {"description": "Agent that discovers and invokes tools from a remote MCP server."}
+  {"description": "Agent that saves and retrieves notes using function calling."}
 
-Respond ONLY with a JSON object: {"displayName": "...", "description": "..."}`;
+Respond ONLY with a JSON object: {"description": "..."}`;
 
     const userPrompt = `Path: ${samplePath}
 
@@ -393,7 +393,7 @@ ${readmeContent.substring(0, 2000)}`;
             { role: 'user', content: userPrompt },
         ],
         temperature: 0,
-        max_tokens: 150,
+        max_tokens: 120,
     };
 
     try {
@@ -407,7 +407,7 @@ ${readmeContent.substring(0, 2000)}`;
         });
 
         if (!response.ok) {
-            warn(`LLM API returned ${response.status} for ${samplePath}; will fall back to directory-name displayName and leave description empty.`);
+            warn(`LLM API returned ${response.status} for ${samplePath}; description will be left empty.`);
             return null;
         }
 
@@ -421,14 +421,12 @@ ${readmeContent.substring(0, 2000)}`;
         const jsonStr = content.replace(/^```json\s*/, '').replace(/\s*```$/, '');
         const parsed = JSON.parse(jsonStr);
 
-        const displayName = typeof parsed.displayName === 'string' ? parsed.displayName.trim() : '';
         const description = typeof parsed.description === 'string' ? parsed.description.trim() : '';
-
-        if (!displayName && !description) {
+        if (!description) {
             return null;
         }
 
-        return { displayName, description };
+        return { description };
     } catch (/** @type {any} */ err) {
         warn(`LLM call failed for ${samplePath}: ${err.message}`);
         return null;
@@ -436,15 +434,23 @@ ${readmeContent.substring(0, 2000)}`;
 }
 
 /**
- * Fallback: derive displayName from directory name.
+ * Derive a displayName from the template's directory name. Strips a leading
+ * numeric ordering prefix (`09-`, `12-`) so reorderings upstream don't bleed
+ * into the picker, then converts dash-separated tokens into Title Case words.
+ *
+ *   `09-declarative-customer-support` -> `Declarative Customer Support`
+ *   `hello-world-invocations-voicelive` -> `Hello World Invocations Voicelive`
+ *   `01-basic` -> `Basic`
+ *
  * @param {string} samplePath
  * @returns {string}
  */
 function displayNameFromPath(samplePath) {
     const dirName = samplePath.split('/').pop() || '';
     return dirName
-        .replace(/^\d+-/, '')
-        .split('-')
+        .replace(/^\d+[-_]/, '')
+        .split(/[-_]/)
+        .filter((w) => w.length > 0)
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
         .join(' ');
 }
@@ -642,50 +648,55 @@ function applyOverrides(templates, overrides) {
 }
 
 /**
- * Auto-fill empty displayName and description using LLM (with README as context).
- * Falls back to directory-name-based displayName if LLM is unavailable.
- * Only fills fields that are still empty after merging existing values.
+ * Auto-fill empty displayName and description fields.
+ *
+ * displayName is ALWAYS derived from the template's directory name when empty
+ * — the LLM is not consulted, because folder-name derivation is deterministic
+ * and PM-predictable. Existing PM-curated displayName values are preserved by
+ * the prior `mergeExistingDisplayFields` step, so this only affects newly
+ * scanned templates.
+ *
+ * description is filled by the LLM (when configured) using the sample's
+ * README as context. Without LLM credentials the description stays empty and
+ * gets surfaced as an anomaly in the step summary.
+ *
  * @param {Array<{displayName: string, description: string, path: string}>} templates
  * @param {string} commitSha
  */
 async function autoFillDisplayFields(templates, commitSha) {
-    const emptyTemplates = templates.filter((t) => !t.displayName || !t.description);
-    if (emptyTemplates.length === 0) {
-        console.log('All templates already have displayName and description.');
-        return;
-    }
-
-    const hasLLM = Boolean(AZURE_OPENAI_ENDPOINT && AZURE_OPENAI_API_KEY);
-    console.log(
-        `Auto-filling ${emptyTemplates.length} templates${hasLLM ? ' using LLM' : ' using directory name fallback'}...`
-    );
-
-    for (const template of emptyTemplates) {
-        if (hasLLM) {
-            const readme = await fetchReadme(template.path, commitSha);
-            if (readme) {
-                const result = await generateWithLLM(readme, template.path);
-                if (result) {
-                    if (!template.displayName && result.displayName) {
-                        template.displayName = result.displayName;
-                    }
-                    if (!template.description && result.description) {
-                        template.description = result.description;
-                    }
-                }
-            }
-        }
-
-        // Fallback: derive displayName from directory name if still empty
+    // Fill displayName first — deterministic, no API calls.
+    for (const template of templates) {
         if (!template.displayName) {
             template.displayName = displayNameFromPath(template.path);
         }
     }
 
-    // Flag any template still missing fields after all fallbacks ran. displayName
-    // is always filled by the directory-name fallback above, so this is mostly
-    // about description — but check both for completeness in case the fallback
-    // ever regresses.
+    const needsDescription = templates.filter((t) => !t.description);
+    if (needsDescription.length === 0) {
+        console.log('All templates already have a description.');
+    } else {
+        const hasLLM = Boolean(AZURE_OPENAI_ENDPOINT && AZURE_OPENAI_API_KEY);
+        if (hasLLM) {
+            console.log(`Generating descriptions for ${needsDescription.length} templates using LLM...`);
+            for (const template of needsDescription) {
+                const readme = await fetchReadme(template.path, commitSha);
+                if (!readme) {
+                    continue;
+                }
+                const result = await generateWithLLM(readme, template.path);
+                if (result?.description) {
+                    template.description = result.description;
+                }
+            }
+        } else {
+            console.log(`${needsDescription.length} templates need a description but no LLM is configured; leaving empty (will be flagged as anomalies).`);
+        }
+    }
+
+    // Flag any template still missing fields after all fallbacks ran.
+    // displayName always gets filled by the folder-name fallback above, so in
+    // practice this only fires for descriptions — but check both in case the
+    // fallback ever regresses.
     for (const template of templates) {
         const missing = [];
         if (!template.displayName) {

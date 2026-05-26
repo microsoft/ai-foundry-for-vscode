@@ -12,6 +12,12 @@ permissions:
   contents: write
   pull-requests: write
 
+# A single in-flight sync at a time — a re-trigger cancels any earlier run
+# rather than racing it for the same PR branch.
+concurrency:
+  group: sync-sample-catalog-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -145,11 +151,12 @@ jobs:
             - New templates added or removed based on the upstream repo structure.
             - `commitSha` updated to the latest commit on `main`.
             - `requiresModel` and `protocol` values re-derived from each sample's `agent.yaml`.
+            - `displayName` derived from each template's folder name; `description` LLM-generated when empty.
             - PM-edited `displayName` and `description` values are preserved from the previous catalog.
 
             ## Reviewer Checks
             - Confirm new templates have correct `language`, `framework`, and `protocol` values.
-            - Fill in `displayName` and `description` for any new templates (empty by default).
+            - Review the auto-generated `description` for any new templates.
             - Confirm no PM-edited display fields were accidentally lost.
           labels: ${{ steps.labels.outputs.labels }}
           add-paths: |

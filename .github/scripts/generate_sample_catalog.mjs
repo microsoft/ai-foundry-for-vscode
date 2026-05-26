@@ -2,11 +2,12 @@
 /**
  * Generate samples/hosted-agent/sample-catalog.json from the foundry-samples repository.
  *
- * Scans the hosted-agents directory tree in microsoft-foundry/foundry-samples,
- * parses each sample's agent.yaml to extract protocol and model requirements,
- * fetches README.md to auto-fill displayName and description (only for empty fields),
- * and writes a flat catalog JSON that the VS Code extension consumes for
- * template selection.
+ * Walks the hosted-agents tree in microsoft-foundry/foundry-samples once via
+ * the git-tree API, parses each sample's agent.yaml (+ optional
+ * agent.manifest.yaml) for protocol and model requirements, derives
+ * displayName from the directory name, and — when AZURE_OPENAI_* secrets are
+ * set — fills the description with a short LLM-generated sentence sourced
+ * from the sample's README.md.
  *
  * Usage:
  *   node generate_sample_catalog.mjs <commitSha>
@@ -15,6 +16,7 @@
  *   GITHUB_TOKEN        Optional GitHub token for API authentication.
  *   REPO_ROOT           Repository root (defaults to two levels up from this script).
  *   SAMPLES_REPO_URL    Source repo URL (defaults to https://github.com/microsoft-foundry/foundry-samples/).
+ *   AZURE_OPENAI_*      Optional; when set, descriptions are LLM-generated.
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
@@ -237,8 +239,10 @@ function inferProtocolFromPath(templatePath) {
 }
 
 /**
- * Minimal parser for agent.yaml — extracts protocol and environment_variables.
- * Does NOT use eval or dynamic code execution.
+ * Minimal parser for agent.yaml. Extracts the declared protocol(s) and
+ * whether the sample exposes the AZURE_AI_MODEL_DEPLOYMENT_NAME env var
+ * (used as a heuristic for `requiresModel`). Does NOT use eval or a real
+ * YAML library — a regex-y scan is sufficient for our two fields.
  * @param {string} content
  * @returns {{ protocols: Array<'responses' | 'invocations'>, hasModelEnv: boolean }}
  */
@@ -435,12 +439,9 @@ ${readmeContent.substring(0, 2000)}`;
 
 /**
  * Derive a displayName from the template's directory name. Strips a leading
- * numeric ordering prefix (`09-`, `12-`) so reorderings upstream don't bleed
- * into the picker, then converts dash-separated tokens into Title Case words.
- *
- *   `09-declarative-customer-support` -> `Declarative Customer Support`
- *   `hello-world-invocations-voicelive` -> `Hello World Invocations Voicelive`
- *   `01-basic` -> `Basic`
+ * numeric ordering prefix (`09-`, `12_`) so upstream reorderings don't bleed
+ * into the picker, then converts dash/underscore tokens into Title Case
+ * words:  `09-declarative-customer-support` -> `Declarative Customer Support`.
  *
  * @param {string} samplePath
  * @returns {string}
@@ -693,20 +694,11 @@ async function autoFillDisplayFields(templates, commitSha) {
         }
     }
 
-    // Flag any template still missing fields after all fallbacks ran.
-    // displayName always gets filled by the folder-name fallback above, so in
-    // practice this only fires for descriptions — but check both in case the
-    // fallback ever regresses.
+    // displayName always gets filled by the folder-name fallback above, so
+    // anomaly detection here is description-only.
     for (const template of templates) {
-        const missing = [];
-        if (!template.displayName) {
-            missing.push('displayName');
-        }
         if (!template.description) {
-            missing.push('description');
-        }
-        if (missing.length > 0) {
-            warn(`Template "${template.path}" is missing: ${missing.join(', ')}. PM should fill these before merge.`);
+            warn(`Template "${template.path}" is missing: description. PM should fill it before merge.`);
         }
     }
 }
@@ -719,14 +711,15 @@ async function main() {
     const templates = await scanTemplates(commitSha);
     console.log(`Found ${templates.length} templates`);
 
-    // Step 1: Preserve existing PM-edited or previously auto-filled values
+    // Step 1: Preserve existing PM-curated displayName/description values.
     mergeExistingDisplayFields(templates);
 
     // Step 2: Apply source-controlled per-path overrides (structural fields like
     // `framework` that the upstream tree layout cannot express on its own).
     applyOverrides(templates, loadOverrides());
 
-    // Step 3: Auto-fill remaining empty fields (LLM if configured, else directory name fallback)
+    // Step 3: Fill remaining empties — displayName from folder name (always),
+    // description from the LLM when configured.
     await autoFillDisplayFields(templates, commitSha);
 
     const dimensions = buildDimensions(templates);
@@ -741,9 +734,7 @@ async function main() {
     };
 
     const outputDir = dirname(OUTPUT_PATH);
-    if (!existsSync(outputDir)) {
-        mkdirSync(outputDir, { recursive: true });
-    }
+    mkdirSync(outputDir, { recursive: true });
     writeFileSync(OUTPUT_PATH, JSON.stringify(catalog, null, 4) + '\n', 'utf-8');
 
     console.log(`Wrote ${OUTPUT_PATH}`);
@@ -783,8 +774,7 @@ function writeSummary(templateCount) {
         lines.push('These were logged during generation and may need human attention before merging:');
         lines.push('');
         for (const message of warnings) {
-            // Escape pipes so the message renders cleanly even if used inside a future table.
-            lines.push(`- ${message.replace(/\|/g, '\\|')}`);
+            lines.push(`- ${message}`);
         }
         lines.push('');
     } else {

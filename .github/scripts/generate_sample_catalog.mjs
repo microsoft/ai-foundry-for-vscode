@@ -201,8 +201,11 @@ function findTemplateDirsUnder(tree, prefix) {
             }
             return rel.split('/').every((seg) => isSafePathSegment(seg));
         })
-        // Sort by length so outermost templates are visited first.
-        .sort((a, b) => a.length - b.length);
+        // Lexicographic sort serves two purposes: (1) a parent path always
+        // sorts before its descendants, so the `startsWith` check below
+        // correctly keeps only the outermost agent.yaml; (2) it preserves
+        // upstream's `NN-` numeric prefix ordering in the picker.
+        .sort();
 
     /** @type {string[]} */
     const outermost = [];

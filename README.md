@@ -1,5 +1,7 @@
 # Microsoft Foundry for Visual Studio Code
 
+## This extension is deprecated. Use the Foundry Toolkit for VS Code extension instead. Please use the [Foundry Toolkit](https://github.com/microsoft/foundry-toolkit) repo to file issues.
+
 With the **Microsoft Foundry for Visual Studio Code extension** you can easily deploy Large Language Models, develop AI applications, develop with Agents, and more with [Microsoft Foundry](https://azure.microsoft.com/products/ai-foundry/) from the Visual Studio Code interface. 
 
 With Microsoft Foundry, you can:
